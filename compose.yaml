@@ -1,0 +1,17 @@
+services:
+  api:
+    build: .
+    environment:
+      PORT: 3000
+      WEB_ORIGIN: http://localhost:4200
+      DATABASE_PATH: /app/data/gatherly.db
+    ports: ["3000:3000"]
+    volumes: ["gatherly-data:/app/data"]
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    ports: ["4200:80"]
+    depends_on: [api]
+volumes:
+  gatherly-data:

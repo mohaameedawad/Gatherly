@@ -1,0 +1,20 @@
+{
+    "name": "gatherly",
+    "private": true,
+    "version": "1.0.0",
+    "workspaces": [
+        "apps/*"
+    ],
+    "scripts": {
+        "dev": "concurrently -n API,WEB -c cyan,magenta \"npm run dev -w @gatherly/api\" \"npm start -w web\"",
+        "build": "npm run build -w @gatherly/api && npm run build -w web",
+        "test": "npm run test -w @gatherly/api && npm run test -w web -- --watch=false",
+        "lint": "npm run lint -w @gatherly/api"
+    },
+    "devDependencies": {
+        "concurrently": "^9.2.1"
+    },
+    "engines": {
+        "node": ">=22.12"
+    }
+}
