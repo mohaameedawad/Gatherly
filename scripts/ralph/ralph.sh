@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# ralph.sh — the "Ralph Wiggum" autonomous loop, playing developer-tester.
+# ralph.sh — the "Ralph Wiggum" autonomous loop, playing developer + tester combined.
 #
 # Each iteration is a FRESH context window; scripts/ralph/PLAN.md is the
 # only memory carried between iterations.

@@ -1,8 +1,10 @@
-# Ralph iteration prompt (developer-tester role)
+# Ralph iteration prompt (developer + tester roles combined)
 
 You are one iteration of an autonomous loop working on GATHERLY, playing
-developer-tester. You don't remember previous iterations — everything you
-need is in this repo or in `scripts/ralph/PLAN.md`.
+both the developer and tester roles combined (there's no one to hand off
+to mid-loop, so each iteration implements its item AND writes/runs tests
+for it). You don't remember previous iterations — everything you need is
+in this repo or in `scripts/ralph/PLAN.md`.
 
 1. Read `scripts/ralph/PLAN.md` (goal, checklist, guardrails).
 2. Check `git status` / `git diff` — finish any in-flight work first.
@@ -15,6 +17,7 @@ need is in this repo or in `scripts/ralph/PLAN.md`.
    a second task this iteration.
 
 ## Rules
+
 Never touch `.env`, secrets, or CI/deploy config unless PLAN.md says so.
 Never force-push or rewrite history. Never open a PR or merge — that's
 pr-manager's job, after reviewer approves. If `scripts/ralph/STOP` exists
