@@ -1,5 +1,5 @@
-import { Component, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Component, inject, signal, computed, effect } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { ConferenceDetail as Model, Session, Room, Track } from '../../core/models/models';
@@ -189,7 +189,77 @@ import { CommonModule } from '@angular/common';
             {{ errorMessage() }}
           </div>
         }
-        @for (s of c.sessions; track s.id) {
+        
+        <!-- Filters Section -->
+        <div class="filters" style="padding: 16px; margin: 12px 0; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px;">
+          <h3 style="margin-top: 0; margin-bottom: 12px; font-size: 1rem;">Filter Sessions</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+            <div>
+              <label style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Search</label>
+              <input 
+                type="text" 
+                [(ngModel)]="filters.search" 
+                (ngModelChange)="applyFilters()"
+                placeholder="Search title or abstract..."
+                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem;">
+            </div>
+            
+            <div>
+              <label style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Day</label>
+              <select 
+                [(ngModel)]="filters.day" 
+                (ngModelChange)="applyFilters()"
+                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem;">
+                <option value="">All days</option>
+                @for (day of uniqueDays(); track day) {
+                  <option [value]="day">{{ day }}</option>
+                }
+              </select>
+            </div>
+            
+            <div>
+              <label style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Track</label>
+              <select 
+                [(ngModel)]="filters.track" 
+                (ngModelChange)="applyFilters()"
+                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem;">
+                <option value="">All tracks</option>
+                @for (track of uniqueTracks(); track track) {
+                  <option [value]="track">{{ track }}</option>
+                }
+              </select>
+            </div>
+            
+            <div>
+              <label style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Room</label>
+              <select 
+                [(ngModel)]="filters.room" 
+                (ngModelChange)="applyFilters()"
+                style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem;">
+                <option value="">All rooms</option>
+                @for (room of uniqueRooms(); track room) {
+                  <option [value]="room">{{ room }}</option>
+                }
+              </select>
+            </div>
+          </div>
+          
+          @if (hasActiveFilters()) {
+            <div style="margin-top: 12px;">
+              <button 
+                (click)="clearFilters()" 
+                class="btn small secondary"
+                style="padding: 6px 12px; font-size: 0.875rem;">
+                Clear all filters
+              </button>
+              <span style="margin-left: 12px; font-size: 0.875rem; color: #666;">
+                Showing {{ filteredSessions().length }} of {{ c.sessions.length }} sessions
+              </span>
+            </div>
+          }
+        </div>
+        
+        @for (s of filteredSessions(); track s.id) {
           <article class="session">
             <div class="session-time">
               <strong>{{ time(s.startsAt) }}</strong
@@ -236,7 +306,14 @@ import { CommonModule } from '@angular/common';
             }
           </article>
         } @empty {
-          <div class="empty"><strong>Program coming soon</strong></div>
+          @if (hasActiveFilters()) {
+            <div class="empty">
+              <strong>No sessions found</strong>
+              <p style="margin-top: 8px; color: #666;">Try adjusting your filters to see more results.</p>
+            </div>
+          } @else {
+            <div class="empty"><strong>Program coming soon</strong></div>
+          }
         }
       </section>
     </div>
@@ -244,6 +321,7 @@ import { CommonModule } from '@angular/common';
 })
 export class ProjectDetail {
   p = inject(ActivatedRoute);
+  router = inject(Router);
   api = inject(ApiService);
   auth = inject(AuthService);
   conference = signal<Model | null>(null);
@@ -254,6 +332,83 @@ export class ProjectDetail {
   toast = signal<string | null>(null);
   cancelFormData = { sessionId: 0, reason: '' };
   showCancelModal = signal<boolean>(false);
+  
+  // Filters
+  filters = {
+    search: '',
+    day: '',
+    track: '',
+    room: '',
+  };
+  
+  // Computed values for filter options
+  uniqueDays = computed(() => {
+    const c = this.conference();
+    if (!c) return [];
+    const days = new Set<string>();
+    c.sessions.forEach(s => {
+      const date = new Date(s.startsAt).toLocaleDateString('en', { 
+        weekday: 'short', 
+        month: 'short', 
+        day: 'numeric' 
+      });
+      days.add(date);
+    });
+    return Array.from(days).sort();
+  });
+  
+  uniqueTracks = computed(() => {
+    const c = this.conference();
+    if (!c) return [];
+    return Array.from(new Set(c.sessions.map(s => s.track))).sort();
+  });
+  
+  uniqueRooms = computed(() => {
+    const c = this.conference();
+    if (!c) return [];
+    return Array.from(new Set(c.sessions.map(s => s.room))).sort();
+  });
+  
+  // Filtered sessions
+  filteredSessions = computed(() => {
+    const c = this.conference();
+    if (!c) return [];
+    
+    let sessions = c.sessions;
+    
+    // Filter by search text
+    if (this.filters.search.trim()) {
+      const search = this.filters.search.toLowerCase();
+      sessions = sessions.filter(s => 
+        s.title.toLowerCase().includes(search) || 
+        s.abstract.toLowerCase().includes(search)
+      );
+    }
+    
+    // Filter by day
+    if (this.filters.day) {
+      sessions = sessions.filter(s => {
+        const date = new Date(s.startsAt).toLocaleDateString('en', { 
+          weekday: 'short', 
+          month: 'short', 
+          day: 'numeric' 
+        });
+        return date === this.filters.day;
+      });
+    }
+    
+    // Filter by track
+    if (this.filters.track) {
+      sessions = sessions.filter(s => s.track === this.filters.track);
+    }
+    
+    // Filter by room
+    if (this.filters.room) {
+      sessions = sessions.filter(s => s.room === this.filters.room);
+    }
+    
+    return sessions;
+  });
   
   formData = {
     title: '',
@@ -267,6 +422,17 @@ export class ProjectDetail {
   
   constructor() {
     this.load();
+    this.loadFiltersFromUrl();
+    
+    // Watch for query param changes
+    effect(() => {
+      this.p.queryParams.subscribe(params => {
+        this.filters.search = params['search'] || '';
+        this.filters.day = params['day'] || '';
+        this.filters.track = params['track'] || '';
+        this.filters.room = params['room'] || '';
+      });
+    });
   }
   
   load() {
@@ -429,6 +595,47 @@ export class ProjectDetail {
       }
     });
   }
+  
+  loadFiltersFromUrl() {
+    const params = this.p.snapshot.queryParams;
+    this.filters.search = params['search'] || '';
+    this.filters.day = params['day'] || '';
+    this.filters.track = params['track'] || '';
+    this.filters.room = params['room'] || '';
+  }
+  
+  applyFilters() {
+    // Update URL with current filters
+    const queryParams: any = {};
+    if (this.filters.search) queryParams.search = this.filters.search;
+    if (this.filters.day) queryParams.day = this.filters.day;
+    if (this.filters.track) queryParams.track = this.filters.track;
+    if (this.filters.room) queryParams.room = this.filters.room;
+    
+    this.router.navigate([], {
+      relativeTo: this.p,
+      queryParams,
+      queryParamsHandling: 'merge'
+    });
+  }
+  
+  clearFilters() {
+    this.filters = {
+      search: '',
+      day: '',
+      track: '',
+      room: '',
+    };
+    this.router.navigate([], {
+      relativeTo: this.p,
+      queryParams: {}
+    });
+  }
+  
+  hasActiveFilters(): boolean {
+    return !!(this.filters.search || this.filters.day || this.filters.track || this.filters.room);
+  }
+  
   date = (x: string) =>
     new Date(x).toLocaleDateString('en', {
       weekday: 'short',

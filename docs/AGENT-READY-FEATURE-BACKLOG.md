@@ -42,7 +42,7 @@ reviewed, not yet committed) → `Committed` (pr-manager pushed it).
 | US-2.4  | Cancel or complete a conference             | Not started |
 | US-3.1  | Create and edit a session                   | Completed |
 | US-3.2  | Cancel or delete a session                  | Completed |
-| US-3.3  | Browse and filter the schedule              | Not started |
+| US-3.3  | Browse and filter the schedule              | Completed |
 | US-4.1  | Submit a session proposal                   | Not started |
 | US-4.2  | Review a proposal                           | Not started |
 | US-4.3  | Convert an accepted proposal into a session | Not started |
