@@ -34,7 +34,7 @@ vitest/supertest tests on the API, vitest + TestBed on the web app).
 
 ## Checklist
 
-- [ ] US-2.2 — Configure rooms and tracks (Organizer can add/edit/remove
+- [x] US-2.2 — Configure rooms and tracks (Organizer can add/edit/remove
       rooms and tracks on a conference; room capacity <= conference
       capacity; names unique within a conference; a room/track used by a
       session cannot be deleted)

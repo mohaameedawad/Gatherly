@@ -35,6 +35,17 @@ export type Session = {
   capacity: number;
   speakerId: number;
 };
+export type Room = {
+  id: number;
+  conferenceId: number;
+  name: string;
+  capacity: number;
+};
+export type Track = {
+  id: number;
+  conferenceId: number;
+  name: string;
+};
 export type ConferenceDetail = Conference & {
   sessions: Session[];
   registrations: number;

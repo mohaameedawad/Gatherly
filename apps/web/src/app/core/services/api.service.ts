@@ -1,7 +1,9 @@
 import { inject, Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Conference, ConferenceDetail, User } from '../models/models';
+import { Conference, ConferenceDetail, Room, Track, User } from '../models/models';
 type ConferenceDraft = Omit<Conference, 'id' | 'slug' | 'status' | 'organizerId' | 'theme'>;
+type RoomDraft = Omit<Room, 'id' | 'conferenceId'>;
+type TrackDraft = Omit<Track, 'id' | 'conferenceId'>;
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private h = inject(HttpClient);
@@ -23,6 +25,36 @@ export class ApiService {
   }
   toggleAgenda(id: number) {
     return this.h.patch<{ selected: boolean }>(`${this.api}/conferences/sessions/${id}/agenda`, {});
+  }
+  rooms(conferenceId: number) {
+    return this.h.get<Room[]>(`${this.api}/conferences/${conferenceId}/rooms`);
+  }
+  createRoom(conferenceId: number, input: RoomDraft) {
+    return this.h.post<Room>(`${this.api}/conferences/${conferenceId}/rooms`, input);
+  }
+  updateRoom(conferenceId: number, roomId: number, input: RoomDraft) {
+    return this.h.patch<Room>(
+      `${this.api}/conferences/${conferenceId}/rooms/${roomId}`,
+      input,
+    );
+  }
+  deleteRoom(conferenceId: number, roomId: number) {
+    return this.h.delete<void>(`${this.api}/conferences/${conferenceId}/rooms/${roomId}`);
+  }
+  tracks(conferenceId: number) {
+    return this.h.get<Track[]>(`${this.api}/conferences/${conferenceId}/tracks`);
+  }
+  createTrack(conferenceId: number, input: TrackDraft) {
+    return this.h.post<Track>(`${this.api}/conferences/${conferenceId}/tracks`, input);
+  }
+  updateTrack(conferenceId: number, trackId: number, input: TrackDraft) {
+    return this.h.patch<Track>(
+      `${this.api}/conferences/${conferenceId}/tracks/${trackId}`,
+      input,
+    );
+  }
+  deleteTrack(conferenceId: number, trackId: number) {
+    return this.h.delete<void>(`${this.api}/conferences/${conferenceId}/tracks/${trackId}`);
   }
   users() {
     return this.h.get<User[]>(`${this.api}/admin/users`);

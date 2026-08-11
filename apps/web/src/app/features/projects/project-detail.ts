@@ -18,6 +18,9 @@ import { AuthService } from '../../core/auth/auth.service';
         </div>
         @if (auth.hasRole('ADMIN') || auth.user()?.id === c.organizerId) {
           <a class="btn small" [routerLink]="['/conferences', c.id, 'edit']">Edit draft</a>
+          <a class="btn small secondary" [routerLink]="['/conferences', c.id, 'rooms']"
+            >Rooms & tracks</a
+          >
         }
       </div>
       <div class="registration-card">

@@ -6,7 +6,9 @@ import type {
   Conference,
   ConferenceDetail,
   Role,
+  Room,
   Session,
+  Track,
   User,
 } from "../types.js";
 
@@ -18,7 +20,9 @@ CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,name TEXT,email TEXT UNI
 CREATE TABLE IF NOT EXISTS conferences(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,summary TEXT,venue TEXT,city TEXT,starts_at TEXT,ends_at TEXT,status TEXT,capacity INTEGER,organizer_id INTEGER,theme TEXT,timezone TEXT);
 CREATE TABLE IF NOT EXISTS sessions(id INTEGER PRIMARY KEY,conference_id INTEGER,title TEXT,abstract TEXT,track TEXT,room TEXT,starts_at TEXT,ends_at TEXT,capacity INTEGER,speaker_id INTEGER);
 CREATE TABLE IF NOT EXISTS registrations(conference_id INTEGER,user_id INTEGER,status TEXT DEFAULT 'CONFIRMED',PRIMARY KEY(conference_id,user_id));
-CREATE TABLE IF NOT EXISTS agenda(user_id INTEGER,session_id INTEGER,PRIMARY KEY(user_id,session_id));`);
+CREATE TABLE IF NOT EXISTS agenda(user_id INTEGER,session_id INTEGER,PRIMARY KEY(user_id,session_id));
+CREATE TABLE IF NOT EXISTS rooms(id INTEGER PRIMARY KEY,conference_id INTEGER,name TEXT,capacity INTEGER);
+CREATE TABLE IF NOT EXISTS tracks(id INTEGER PRIMARY KEY,conference_id INTEGER,name TEXT);`);
 // Idempotent migration for columns added after the initial release; safe to
 // re-run against a pre-existing database file that predates them.
 try {
@@ -176,6 +180,28 @@ const session = (r: any): Session => ({
   capacity: r.capacity,
   speakerId: r.speaker_id,
 });
+const room = (r: any): Room => ({
+  id: r.id,
+  conferenceId: r.conference_id,
+  name: r.name,
+  capacity: r.capacity,
+});
+const track = (r: any): Track => ({
+  id: r.id,
+  conferenceId: r.conference_id,
+  name: r.name,
+});
+const requireOwnedConference = (
+  id: number,
+  requester: { id: number; role: Role },
+) => {
+  const r = db.prepare("SELECT * FROM conferences WHERE id=?").get(id);
+  if (!r) throw Error("NOT_FOUND");
+  const c = conference(r);
+  if (requester.role !== "ADMIN" && c.organizerId !== requester.id)
+    throw Error("FORBIDDEN");
+  return c;
+};
 export const store = {
   findUserByEmail: (email: string) => {
     const r = db
@@ -353,5 +379,163 @@ export const store = {
     return conference(
       db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
     );
+  },
+  rooms: (
+    conferenceId: number,
+    requester: { id: number; role: Role },
+  ): Room[] => {
+    requireOwnedConference(conferenceId, requester);
+    return (
+      db
+        .prepare("SELECT * FROM rooms WHERE conference_id=? ORDER BY name")
+        .all(conferenceId) as any[]
+    ).map(room);
+  },
+  createRoom: (
+    conferenceId: number,
+    requester: { id: number; role: Role },
+    input: Omit<Room, "id" | "conferenceId">,
+  ) => {
+    const c = requireOwnedConference(conferenceId, requester);
+    if (input.capacity > c.capacity) throw Error("CAPACITY_EXCEEDED");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM rooms WHERE conference_id=? AND lower(name)=lower(?)",
+        )
+        .get(conferenceId, input.name)
+    )
+      throw Error("DUPLICATE_NAME");
+    const x = db
+      .prepare("INSERT INTO rooms(conference_id,name,capacity) VALUES(?,?,?)")
+      .run(conferenceId, input.name, input.capacity);
+    return room(
+      db.prepare("SELECT * FROM rooms WHERE id=?").get(x.lastInsertRowid),
+    );
+  },
+  updateRoom: (
+    conferenceId: number,
+    roomId: number,
+    requester: { id: number; role: Role },
+    input: Omit<Room, "id" | "conferenceId">,
+  ) => {
+    const c = requireOwnedConference(conferenceId, requester);
+    if (
+      !db
+        .prepare("SELECT 1 FROM rooms WHERE id=? AND conference_id=?")
+        .get(roomId, conferenceId)
+    )
+      throw Error("NOT_FOUND");
+    if (input.capacity > c.capacity) throw Error("CAPACITY_EXCEEDED");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM rooms WHERE conference_id=? AND lower(name)=lower(?) AND id!=?",
+        )
+        .get(conferenceId, input.name, roomId)
+    )
+      throw Error("DUPLICATE_NAME");
+    db.prepare("UPDATE rooms SET name=?,capacity=? WHERE id=?").run(
+      input.name,
+      input.capacity,
+      roomId,
+    );
+    return room(db.prepare("SELECT * FROM rooms WHERE id=?").get(roomId));
+  },
+  deleteRoom: (
+    conferenceId: number,
+    roomId: number,
+    requester: { id: number; role: Role },
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    const existing = db
+      .prepare("SELECT * FROM rooms WHERE id=? AND conference_id=?")
+      .get(roomId, conferenceId) as any;
+    if (!existing) throw Error("NOT_FOUND");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM sessions WHERE conference_id=? AND lower(room)=lower(?)",
+        )
+        .get(conferenceId, existing.name)
+    )
+      throw Error("IN_USE");
+    db.prepare("DELETE FROM rooms WHERE id=?").run(roomId);
+  },
+  tracks: (
+    conferenceId: number,
+    requester: { id: number; role: Role },
+  ): Track[] => {
+    requireOwnedConference(conferenceId, requester);
+    return (
+      db
+        .prepare("SELECT * FROM tracks WHERE conference_id=? ORDER BY name")
+        .all(conferenceId) as any[]
+    ).map(track);
+  },
+  createTrack: (
+    conferenceId: number,
+    requester: { id: number; role: Role },
+    input: Omit<Track, "id" | "conferenceId">,
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?)",
+        )
+        .get(conferenceId, input.name)
+    )
+      throw Error("DUPLICATE_NAME");
+    const x = db
+      .prepare("INSERT INTO tracks(conference_id,name) VALUES(?,?)")
+      .run(conferenceId, input.name);
+    return track(
+      db.prepare("SELECT * FROM tracks WHERE id=?").get(x.lastInsertRowid),
+    );
+  },
+  updateTrack: (
+    conferenceId: number,
+    trackId: number,
+    requester: { id: number; role: Role },
+    input: Omit<Track, "id" | "conferenceId">,
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    if (
+      !db
+        .prepare("SELECT 1 FROM tracks WHERE id=? AND conference_id=?")
+        .get(trackId, conferenceId)
+    )
+      throw Error("NOT_FOUND");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?) AND id!=?",
+        )
+        .get(conferenceId, input.name, trackId)
+    )
+      throw Error("DUPLICATE_NAME");
+    db.prepare("UPDATE tracks SET name=? WHERE id=?").run(input.name, trackId);
+    return track(db.prepare("SELECT * FROM tracks WHERE id=?").get(trackId));
+  },
+  deleteTrack: (
+    conferenceId: number,
+    trackId: number,
+    requester: { id: number; role: Role },
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    const existing = db
+      .prepare("SELECT * FROM tracks WHERE id=? AND conference_id=?")
+      .get(trackId, conferenceId) as any;
+    if (!existing) throw Error("NOT_FOUND");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM sessions WHERE conference_id=? AND lower(track)=lower(?)",
+        )
+        .get(conferenceId, existing.name)
+    )
+      throw Error("IN_USE");
+    db.prepare("DELETE FROM tracks WHERE id=?").run(trackId);
   },
 };

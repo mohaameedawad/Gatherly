@@ -33,6 +33,12 @@ export const routes: Routes = [
           import('./features/projects/conference-form').then((m) => m.ConferenceForm),
       },
       {
+        path: 'conferences/:id/rooms',
+        canActivate: [roleGuard(['ADMIN', 'ORGANIZER'])],
+        loadComponent: () =>
+          import('./features/projects/conference-rooms').then((m) => m.ConferenceRooms),
+      },
+      {
         path: 'conferences/:id',
         loadComponent: () =>
           import('./features/projects/project-detail').then((m) => m.ProjectDetail),

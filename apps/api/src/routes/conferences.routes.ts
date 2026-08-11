@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response } from "express";
 import { z } from "zod";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { store } from "../db/store.js";
@@ -99,5 +99,155 @@ conferencesRouter.post(
         .status(400)
         .json({ message: "Session validation failed", issues: x.error.issues });
     res.status(201).json(store.createSession(+req.params.id, x.data));
+  },
+);
+const conferenceErrorStatus = (m: string) =>
+  ({
+    NOT_FOUND: 404,
+    FORBIDDEN: 403,
+    CAPACITY_EXCEEDED: 400,
+    DUPLICATE_NAME: 409,
+    IN_USE: 409,
+  })[m] ?? 400;
+const conferenceErrorMessage = (m: string) =>
+  ({
+    NOT_FOUND: "Conference not found",
+    FORBIDDEN: "You do not own this conference",
+    CAPACITY_EXCEEDED: "Capacity cannot exceed the conference capacity",
+    DUPLICATE_NAME: "That name is already used in this conference",
+    IN_USE: "Cannot delete: still used by a session",
+  })[m] ?? "Request could not be completed";
+const respondWithConferenceError = (res: Response, e: unknown) => {
+  const m = (e as Error).message;
+  res
+    .status(conferenceErrorStatus(m))
+    .json({ message: conferenceErrorMessage(m) });
+};
+const roomSchema = z.object({
+  name: z.string().min(2),
+  capacity: z.number().int().positive(),
+});
+const trackSchema = z.object({
+  name: z.string().min(2),
+});
+conferencesRouter.get(
+  "/:id/rooms",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    try {
+      res.json(store.rooms(+req.params.id, req.user!));
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
+conferencesRouter.post(
+  "/:id/rooms",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    const x = roomSchema.safeParse(req.body);
+    if (!x.success)
+      return res
+        .status(400)
+        .json({ message: "Room validation failed", issues: x.error.issues });
+    try {
+      res.status(201).json(store.createRoom(+req.params.id, req.user!, x.data));
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
+conferencesRouter.patch(
+  "/:id/rooms/:roomId",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    const x = roomSchema.safeParse(req.body);
+    if (!x.success)
+      return res
+        .status(400)
+        .json({ message: "Room validation failed", issues: x.error.issues });
+    try {
+      res.json(
+        store.updateRoom(+req.params.id, +req.params.roomId, req.user!, x.data),
+      );
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
+conferencesRouter.delete(
+  "/:id/rooms/:roomId",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    try {
+      store.deleteRoom(+req.params.id, +req.params.roomId, req.user!);
+      res.status(204).send();
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
+conferencesRouter.get(
+  "/:id/tracks",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    try {
+      res.json(store.tracks(+req.params.id, req.user!));
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
+conferencesRouter.post(
+  "/:id/tracks",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    const x = trackSchema.safeParse(req.body);
+    if (!x.success)
+      return res
+        .status(400)
+        .json({ message: "Track validation failed", issues: x.error.issues });
+    try {
+      res
+        .status(201)
+        .json(store.createTrack(+req.params.id, req.user!, x.data));
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
+conferencesRouter.patch(
+  "/:id/tracks/:trackId",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    const x = trackSchema.safeParse(req.body);
+    if (!x.success)
+      return res
+        .status(400)
+        .json({ message: "Track validation failed", issues: x.error.issues });
+    try {
+      res.json(
+        store.updateTrack(
+          +req.params.id,
+          +req.params.trackId,
+          req.user!,
+          x.data,
+        ),
+      );
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
+conferencesRouter.delete(
+  "/:id/tracks/:trackId",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    try {
+      store.deleteTrack(+req.params.id, +req.params.trackId, req.user!);
+      res.status(204).send();
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
   },
 );

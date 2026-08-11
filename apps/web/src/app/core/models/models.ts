@@ -40,3 +40,14 @@ export interface ConferenceDetail extends Conference {
   isRegistered: boolean;
   agendaSessionIds: number[];
 }
+export interface Room {
+  id: number;
+  conferenceId: number;
+  name: string;
+  capacity: number;
+}
+export interface Track {
+  id: number;
+  conferenceId: number;
+  name: string;
+}

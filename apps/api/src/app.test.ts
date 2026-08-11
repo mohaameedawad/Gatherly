@@ -118,3 +118,137 @@ describe("US-2.1 create a conference draft", () => {
     expect(updated.body.title).toBe("Updated Title");
   });
 });
+describe("US-2.2 configure rooms and tracks", () => {
+  const draft = (over: Partial<Record<string, unknown>> = {}) => ({
+    title: "Rooms & Tracks Conference",
+    summary: "A brand new gathering for the community.",
+    venue: "Test Hall",
+    city: "Cairo",
+    startsAt: "2027-06-01T09:00:00",
+    endsAt: "2027-06-02T17:00:00",
+    timezone: "Africa/Cairo",
+    capacity: 50,
+    ...over,
+  });
+  const createDraft = async (t: string, over: Partial<Record<string, unknown>> = {}) =>
+    (
+      await request(app)
+        .post("/api/conferences")
+        .set("Authorization", `Bearer ${t}`)
+        .send(draft(over))
+    ).body.id;
+  it("blocks attendee from listing or managing rooms", async () => {
+    const ot = await login("organizer");
+    const id = await createDraft(ot);
+    const at = await login("attendee");
+    expect(
+      (
+        await request(app)
+          .get(`/api/conferences/${id}/rooms`)
+          .set("Authorization", `Bearer ${at}`)
+      ).status,
+    ).toBe(403);
+  });
+  it("lets the owning organizer add, edit, and remove a room", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    const created = await request(app)
+      .post(`/api/conferences/${id}/rooms`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "Hall A", capacity: 30 });
+    expect(created.status).toBe(201);
+    expect(created.body.name).toBe("Hall A");
+    const updated = await request(app)
+      .patch(`/api/conferences/${id}/rooms/${created.body.id}`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "Hall A2", capacity: 40 });
+    expect(updated.status).toBe(200);
+    expect(updated.body.name).toBe("Hall A2");
+    const deleted = await request(app)
+      .delete(`/api/conferences/${id}/rooms/${created.body.id}`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(deleted.status).toBe(204);
+    const list = await request(app)
+      .get(`/api/conferences/${id}/rooms`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(list.body).toHaveLength(0);
+  });
+  it("rejects a room capacity above the conference capacity", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t, { capacity: 20 });
+    const r = await request(app)
+      .post(`/api/conferences/${id}/rooms`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "Hall A", capacity: 21 });
+    expect(r.status).toBe(400);
+  });
+  it("rejects a duplicate room name within a conference", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    await request(app)
+      .post(`/api/conferences/${id}/rooms`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "Hall A", capacity: 10 });
+    const dup = await request(app)
+      .post(`/api/conferences/${id}/rooms`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "hall a", capacity: 10 });
+    expect(dup.status).toBe(409);
+  });
+  it("prevents deleting a room that is used by a session", async () => {
+    const t = await login("organizer");
+    const r = await request(app)
+      .post("/api/conferences/1/rooms")
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "Main Stage", capacity: 400 });
+    expect(r.status).toBe(201);
+    const del = await request(app)
+      .delete(`/api/conferences/1/rooms/${r.body.id}`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(del.status).toBe(409);
+  });
+  it("lets the owning organizer add, edit, and remove a track", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    const created = await request(app)
+      .post(`/api/conferences/${id}/tracks`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "Track A" });
+    expect(created.status).toBe(201);
+    const updated = await request(app)
+      .patch(`/api/conferences/${id}/tracks/${created.body.id}`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "Track A2" });
+    expect(updated.status).toBe(200);
+    expect(updated.body.name).toBe("Track A2");
+    const deleted = await request(app)
+      .delete(`/api/conferences/${id}/tracks/${created.body.id}`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(deleted.status).toBe(204);
+  });
+  it("rejects a duplicate track name within a conference", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    await request(app)
+      .post(`/api/conferences/${id}/tracks`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "Track A" });
+    const dup = await request(app)
+      .post(`/api/conferences/${id}/tracks`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "track a" });
+    expect(dup.status).toBe(409);
+  });
+  it("prevents deleting a track that is used by a session", async () => {
+    const t = await login("organizer");
+    const r = await request(app)
+      .post("/api/conferences/1/tracks")
+      .set("Authorization", `Bearer ${t}`)
+      .send({ name: "AI Engineering" });
+    expect(r.status).toBe(201);
+    const del = await request(app)
+      .delete(`/api/conferences/1/tracks/${r.body.id}`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(del.status).toBe(409);
+  });
+});
