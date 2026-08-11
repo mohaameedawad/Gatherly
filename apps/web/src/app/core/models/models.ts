@@ -33,6 +33,8 @@ export interface Session {
   endsAt: string;
   capacity: number;
   speakerId: number;
+  status?: 'ACTIVE' | 'CANCELLED';
+  cancelledReason?: string;
 }
 export interface ConferenceDetail extends Conference {
   sessions: Session[];

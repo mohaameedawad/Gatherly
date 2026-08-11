@@ -1,9 +1,10 @@
 import { inject, Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Conference, ConferenceDetail, Room, Track, User } from '../models/models';
+import { Conference, ConferenceDetail, Room, Track, User, Session } from '../models/models';
 type ConferenceDraft = Omit<Conference, 'id' | 'slug' | 'status' | 'organizerId' | 'theme'>;
 type RoomDraft = Omit<Room, 'id' | 'conferenceId'>;
 type TrackDraft = Omit<Track, 'id' | 'conferenceId'>;
+type SessionDraft = Omit<Session, 'id' | 'conferenceId' | 'status' | 'cancelledReason'>;
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private h = inject(HttpClient);
@@ -25,6 +26,15 @@ export class ApiService {
   }
   toggleAgenda(id: number) {
     return this.h.patch<{ selected: boolean }>(`${this.api}/conferences/sessions/${id}/agenda`, {});
+  }
+  createSession(conferenceId: number, input: SessionDraft) {
+    return this.h.post<Session>(`${this.api}/conferences/${conferenceId}/sessions`, input);
+  }
+  deleteSession(conferenceId: number, sessionId: number) {
+    return this.h.delete<void>(`${this.api}/conferences/${conferenceId}/sessions/${sessionId}`);
+  }
+  cancelSession(conferenceId: number, sessionId: number, reason: string) {
+    return this.h.post<Session>(`${this.api}/conferences/${conferenceId}/sessions/${sessionId}/cancel`, { reason });
   }
   rooms(conferenceId: number) {
     return this.h.get<Room[]>(`${this.api}/conferences/${conferenceId}/rooms`);

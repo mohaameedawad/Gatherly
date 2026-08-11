@@ -98,7 +98,58 @@ conferencesRouter.post(
       return res
         .status(400)
         .json({ message: "Session validation failed", issues: x.error.issues });
-    res.status(201).json(store.createSession(+req.params.id, x.data));
+    try {
+      res.status(201).json(store.createSession(+req.params.id, x.data));
+    } catch (e) {
+      respondWithSessionError(res, e);
+    }
+  },
+);
+conferencesRouter.patch(
+  "/:id/sessions/:sessionId",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    const x = sessionSchema.safeParse(req.body);
+    if (!x.success)
+      return res
+        .status(400)
+        .json({ message: "Session validation failed", issues: x.error.issues });
+    try {
+      res.json(store.updateSession(+req.params.id, +req.params.sessionId, req.user!, x.data));
+    } catch (e) {
+      respondWithSessionError(res, e);
+    }
+  },
+);
+conferencesRouter.delete(
+  "/:id/sessions/:sessionId",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    try {
+      store.deleteSession(+req.params.id, +req.params.sessionId, req.user!);
+      res.status(204).send();
+    } catch (e) {
+      respondWithSessionError(res, e);
+    }
+  },
+);
+const cancelSessionSchema = z.object({
+  reason: z.string().min(10, "Cancellation reason must be at least 10 characters"),
+});
+conferencesRouter.post(
+  "/:id/sessions/:sessionId/cancel",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    const x = cancelSessionSchema.safeParse(req.body);
+    if (!x.success)
+      return res
+        .status(400)
+        .json({ message: "Validation failed", issues: x.error.issues });
+    try {
+      res.json(store.cancelSession(+req.params.id, +req.params.sessionId, req.user!, x.data.reason));
+    } catch (e) {
+      respondWithSessionError(res, e);
+    }
   },
 );
 const conferenceErrorStatus = (m: string) =>
@@ -122,6 +173,44 @@ const respondWithConferenceError = (res: Response, e: unknown) => {
   res
     .status(conferenceErrorStatus(m))
     .json({ message: conferenceErrorMessage(m) });
+};
+const sessionErrorStatus = (m: string) =>
+  ({
+    NOT_FOUND: 404,
+    FORBIDDEN: 403,
+    SESSION_OUTSIDE_CONFERENCE: 400,
+    INVALID_TIME_RANGE: 400,
+    CAPACITY_EXCEEDED: 400,
+    ROOM_NOT_FOUND: 404,
+    TRACK_NOT_FOUND: 404,
+    SESSION_IN_USE: 409,
+    CANNOT_DELETE_PUBLISHED: 409,
+    ALREADY_CANCELLED: 409,
+    NO_ROOMS_OR_TRACKS: 400,
+    NO_ROOMS_CONFIGURED: 400,
+    NO_TRACKS_CONFIGURED: 400,
+  })[m] ?? 400;
+const sessionErrorMessage = (m: string) =>
+  ({
+    NOT_FOUND: "Session not found",
+    FORBIDDEN: "You do not own this conference",
+    SESSION_OUTSIDE_CONFERENCE: "Session time must be within conference dates",
+    INVALID_TIME_RANGE: "Session end time must be after start time",
+    CAPACITY_EXCEEDED: "Session capacity cannot exceed room capacity",
+    ROOM_NOT_FOUND: "Room not found in this conference",
+    TRACK_NOT_FOUND: "Track not found in this conference",
+    SESSION_IN_USE: "Cannot delete: session is in attendee agendas",
+    CANNOT_DELETE_PUBLISHED: "Cannot delete sessions from published conferences. Use cancel instead.",
+    ALREADY_CANCELLED: "Session is already cancelled",
+    NO_ROOMS_OR_TRACKS: "Cannot create session: Please configure rooms and tracks first by clicking 'Rooms & tracks' button",
+    NO_ROOMS_CONFIGURED: "Cannot create session: Please add at least one room to this conference first",
+    NO_TRACKS_CONFIGURED: "Cannot create session: Please add at least one track to this conference first",
+  })[m] ?? "Request could not be completed";
+const respondWithSessionError = (res: Response, e: unknown) => {
+  const m = (e as Error).message;
+  res
+    .status(sessionErrorStatus(m))
+    .json({ message: sessionErrorMessage(m) });
 };
 const roomSchema = z.object({
   name: z.string().min(2),

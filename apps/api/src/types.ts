@@ -34,6 +34,8 @@ export type Session = {
   endsAt: string;
   capacity: number;
   speakerId: number;
+  status?: "ACTIVE" | "CANCELLED";
+  cancelledReason?: string;
 };
 export type Room = {
   id: number;
