@@ -1,0 +1,31 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/check-latest.sh",
+            "timeout": 15,
+            "once": true,
+            "statusMessage": "Checking if branch is up to date..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/format-after-write.sh",
+            "timeout": 15,
+            "statusMessage": "Formatting..."
+          }
+        ]
+      }
+    ]
+  }
+}

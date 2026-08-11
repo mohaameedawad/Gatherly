@@ -5,3 +5,6 @@ dist/
 apps/api/data/*.db*
 coverage/
 .DS_Store
+scripts/ralph/logs/
+scripts/ralph/STOP
+.claude/scheduled_tasks.lock
