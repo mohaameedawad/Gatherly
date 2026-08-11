@@ -34,18 +34,6 @@ vitest/supertest tests on the API, vitest + TestBed on the web app).
 
 ## Checklist
 
-- [x] US-2.2 — Configure rooms and tracks (Organizer can add/edit/remove
-      rooms and tracks on a conference; room capacity <= conference
-      capacity; names unique within a conference; a room/track used by a
-      session cannot be deleted)
-- [ ] US-2.3 — Preview and publish a conference (preview stays private
-      while Draft; publish requires required details + a room + >=1
-      session; Draft -> Published; publishing twice has no duplicate
-      effect)
-- [ ] US-2.4 — Cancel or complete a conference (cancel a Draft/Published
-      conference with a required reason; registered attendees notified —
-      stub/log this if EPIC 8 notifications don't exist yet; complete only
-      after end date; Cancelled/Completed block new registrations)
 
 ## Blockers
 
