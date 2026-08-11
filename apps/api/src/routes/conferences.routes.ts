@@ -14,7 +14,11 @@ conferencesRouter.get("/", (req, res) =>
 conferencesRouter.get("/:id", (req, res) => {
   const c = store.conference(+req.params.id, req.user!.id);
   if (!c) return res.status(404).json({ message: "Conference not found" });
-  if (c.status === "DRAFT" && !["ADMIN", "ORGANIZER"].includes(req.user!.role))
+  if (
+    c.status === "DRAFT" &&
+    req.user!.role !== "ADMIN" &&
+    c.organizerId !== req.user!.id
+  )
     return res.status(403).json({ message: "Conference is not published" });
   res.json(c);
 });
@@ -61,6 +65,17 @@ conferencesRouter.patch("/:id", authorize("ADMIN", "ORGANIZER"), (req, res) => {
     });
   }
 });
+conferencesRouter.post(
+  "/:id/publish",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    try {
+      res.json(store.publishConference(+req.params.id, req.user!));
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
 conferencesRouter.post("/:id/register", authorize("ATTENDEE"), (req, res) => {
   try {
     store.register(+req.params.id, req.user!.id);
@@ -115,7 +130,14 @@ conferencesRouter.patch(
         .status(400)
         .json({ message: "Session validation failed", issues: x.error.issues });
     try {
-      res.json(store.updateSession(+req.params.id, +req.params.sessionId, req.user!, x.data));
+      res.json(
+        store.updateSession(
+          +req.params.id,
+          +req.params.sessionId,
+          req.user!,
+          x.data,
+        ),
+      );
     } catch (e) {
       respondWithSessionError(res, e);
     }
@@ -134,7 +156,9 @@ conferencesRouter.delete(
   },
 );
 const cancelSessionSchema = z.object({
-  reason: z.string().min(10, "Cancellation reason must be at least 10 characters"),
+  reason: z
+    .string()
+    .min(10, "Cancellation reason must be at least 10 characters"),
 });
 conferencesRouter.post(
   "/:id/sessions/:sessionId/cancel",
@@ -146,7 +170,14 @@ conferencesRouter.post(
         .status(400)
         .json({ message: "Validation failed", issues: x.error.issues });
     try {
-      res.json(store.cancelSession(+req.params.id, +req.params.sessionId, req.user!, x.data.reason));
+      res.json(
+        store.cancelSession(
+          +req.params.id,
+          +req.params.sessionId,
+          req.user!,
+          x.data.reason,
+        ),
+      );
     } catch (e) {
       respondWithSessionError(res, e);
     }
@@ -159,6 +190,9 @@ const conferenceErrorStatus = (m: string) =>
     CAPACITY_EXCEEDED: 400,
     DUPLICATE_NAME: 409,
     IN_USE: 409,
+    NO_ROOMS: 400,
+    NO_SESSIONS: 400,
+    INVALID_STATUS: 409,
   })[m] ?? 400;
 const conferenceErrorMessage = (m: string) =>
   ({
@@ -167,6 +201,9 @@ const conferenceErrorMessage = (m: string) =>
     CAPACITY_EXCEEDED: "Capacity cannot exceed the conference capacity",
     DUPLICATE_NAME: "That name is already used in this conference",
     IN_USE: "Cannot delete: still used by a session",
+    NO_ROOMS: "Add at least one room before publishing",
+    NO_SESSIONS: "Add at least one session before publishing",
+    INVALID_STATUS: "Only draft conferences can be published",
   })[m] ?? "Request could not be completed";
 const respondWithConferenceError = (res: Response, e: unknown) => {
   const m = (e as Error).message;
@@ -200,17 +237,19 @@ const sessionErrorMessage = (m: string) =>
     ROOM_NOT_FOUND: "Room not found in this conference",
     TRACK_NOT_FOUND: "Track not found in this conference",
     SESSION_IN_USE: "Cannot delete: session is in attendee agendas",
-    CANNOT_DELETE_PUBLISHED: "Cannot delete sessions from published conferences. Use cancel instead.",
+    CANNOT_DELETE_PUBLISHED:
+      "Cannot delete sessions from published conferences. Use cancel instead.",
     ALREADY_CANCELLED: "Session is already cancelled",
-    NO_ROOMS_OR_TRACKS: "Cannot create session: Please configure rooms and tracks first by clicking 'Rooms & tracks' button",
-    NO_ROOMS_CONFIGURED: "Cannot create session: Please add at least one room to this conference first",
-    NO_TRACKS_CONFIGURED: "Cannot create session: Please add at least one track to this conference first",
+    NO_ROOMS_OR_TRACKS:
+      "Cannot create session: Please configure rooms and tracks first by clicking 'Rooms & tracks' button",
+    NO_ROOMS_CONFIGURED:
+      "Cannot create session: Please add at least one room to this conference first",
+    NO_TRACKS_CONFIGURED:
+      "Cannot create session: Please add at least one track to this conference first",
   })[m] ?? "Request could not be completed";
 const respondWithSessionError = (res: Response, e: unknown) => {
   const m = (e as Error).message;
-  res
-    .status(sessionErrorStatus(m))
-    .json({ message: sessionErrorMessage(m) });
+  res.status(sessionErrorStatus(m)).json({ message: sessionErrorMessage(m) });
 };
 const roomSchema = z.object({
   name: z.string().min(2),

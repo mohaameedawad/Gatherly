@@ -21,6 +21,9 @@ export class ApiService {
   updateConference(id: number, input: ConferenceDraft) {
     return this.h.patch<Conference>(`${this.api}/conferences/${id}`, input);
   }
+  publishConference(id: number) {
+    return this.h.post<Conference>(`${this.api}/conferences/${id}/publish`, {});
+  }
   register(id: number) {
     return this.h.post<ConferenceDetail>(`${this.api}/conferences/${id}/register`, {});
   }
@@ -34,7 +37,10 @@ export class ApiService {
     return this.h.delete<void>(`${this.api}/conferences/${conferenceId}/sessions/${sessionId}`);
   }
   cancelSession(conferenceId: number, sessionId: number, reason: string) {
-    return this.h.post<Session>(`${this.api}/conferences/${conferenceId}/sessions/${sessionId}/cancel`, { reason });
+    return this.h.post<Session>(
+      `${this.api}/conferences/${conferenceId}/sessions/${sessionId}/cancel`,
+      { reason },
+    );
   }
   rooms(conferenceId: number) {
     return this.h.get<Room[]>(`${this.api}/conferences/${conferenceId}/rooms`);
@@ -43,10 +49,7 @@ export class ApiService {
     return this.h.post<Room>(`${this.api}/conferences/${conferenceId}/rooms`, input);
   }
   updateRoom(conferenceId: number, roomId: number, input: RoomDraft) {
-    return this.h.patch<Room>(
-      `${this.api}/conferences/${conferenceId}/rooms/${roomId}`,
-      input,
-    );
+    return this.h.patch<Room>(`${this.api}/conferences/${conferenceId}/rooms/${roomId}`, input);
   }
   deleteRoom(conferenceId: number, roomId: number) {
     return this.h.delete<void>(`${this.api}/conferences/${conferenceId}/rooms/${roomId}`);
@@ -58,10 +61,7 @@ export class ApiService {
     return this.h.post<Track>(`${this.api}/conferences/${conferenceId}/tracks`, input);
   }
   updateTrack(conferenceId: number, trackId: number, input: TrackDraft) {
-    return this.h.patch<Track>(
-      `${this.api}/conferences/${conferenceId}/tracks/${trackId}`,
-      input,
-    );
+    return this.h.patch<Track>(`${this.api}/conferences/${conferenceId}/tracks/${trackId}`, input);
   }
   deleteTrack(conferenceId: number, trackId: number) {
     return this.h.delete<void>(`${this.api}/conferences/${conferenceId}/tracks/${trackId}`);

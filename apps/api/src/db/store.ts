@@ -309,13 +309,23 @@ export const store = {
     s: Omit<Session, "id" | "conferenceId" | "status" | "cancelledReason">,
   ) => {
     // Validate conference exists
-    const conf = db.prepare("SELECT * FROM conferences WHERE id=?").get(conferenceId) as any;
+    const conf = db
+      .prepare("SELECT * FROM conferences WHERE id=?")
+      .get(conferenceId) as any;
     if (!conf) throw Error("NOT_FOUND");
-    
+
     // Check if conference has rooms and tracks configured
-    const roomCount = (db.prepare("SELECT count(*) as count FROM rooms WHERE conference_id=?").get(conferenceId) as any).count;
-    const trackCount = (db.prepare("SELECT count(*) as count FROM tracks WHERE conference_id=?").get(conferenceId) as any).count;
-    
+    const roomCount = (
+      db
+        .prepare("SELECT count(*) as count FROM rooms WHERE conference_id=?")
+        .get(conferenceId) as any
+    ).count;
+    const trackCount = (
+      db
+        .prepare("SELECT count(*) as count FROM tracks WHERE conference_id=?")
+        .get(conferenceId) as any
+    ).count;
+
     if (roomCount === 0 && trackCount === 0) {
       throw Error("NO_ROOMS_OR_TRACKS");
     }
@@ -325,32 +335,40 @@ export const store = {
     if (trackCount === 0) {
       throw Error("NO_TRACKS_CONFIGURED");
     }
-    
+
     // Validate session times are within conference bounds
-    if (new Date(s.startsAt) < new Date(conf.starts_at) || 
-        new Date(s.endsAt) > new Date(conf.ends_at)) {
+    if (
+      new Date(s.startsAt) < new Date(conf.starts_at) ||
+      new Date(s.endsAt) > new Date(conf.ends_at)
+    ) {
       throw Error("SESSION_OUTSIDE_CONFERENCE");
     }
-    
+
     // Validate end time is after start time
     if (new Date(s.endsAt) <= new Date(s.startsAt)) {
       throw Error("INVALID_TIME_RANGE");
     }
-    
+
     // Validate room exists and capacity doesn't exceed room capacity
     const roomData = db
-      .prepare("SELECT * FROM rooms WHERE conference_id=? AND lower(name)=lower(?)")
+      .prepare(
+        "SELECT * FROM rooms WHERE conference_id=? AND lower(name)=lower(?)",
+      )
       .get(conferenceId, s.room) as any;
     if (!roomData) throw Error("ROOM_NOT_FOUND");
     if (s.capacity > roomData.capacity) throw Error("CAPACITY_EXCEEDED");
-    
+
     // Validate track exists
-    if (!db
-      .prepare("SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?)")
-      .get(conferenceId, s.track)) {
+    if (
+      !db
+        .prepare(
+          "SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?)",
+        )
+        .get(conferenceId, s.track)
+    ) {
       throw Error("TRACK_NOT_FOUND");
     }
-    
+
     const x = db
       .prepare(
         "INSERT INTO sessions(conference_id,title,abstract,track,room,starts_at,ends_at,capacity,speaker_id,status) VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -432,6 +450,29 @@ export const store = {
       patch.timezone,
       id,
     );
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
+    );
+  },
+  publishConference: (id: number, requester: { id: number; role: Role }) => {
+    const existing = requireOwnedConference(id, requester);
+    if (existing.status === "PUBLISHED") return existing;
+    if (existing.status !== "DRAFT") throw Error("INVALID_STATUS");
+    const roomCount = (
+      db
+        .prepare("SELECT count(*) count FROM rooms WHERE conference_id=?")
+        .get(id) as any
+    ).count;
+    if (roomCount === 0) throw Error("NO_ROOMS");
+    const sessionCount = (
+      db
+        .prepare(
+          "SELECT count(*) count FROM sessions WHERE conference_id=? AND status='ACTIVE'",
+        )
+        .get(id) as any
+    ).count;
+    if (sessionCount === 0) throw Error("NO_SESSIONS");
+    db.prepare("UPDATE conferences SET status='PUBLISHED' WHERE id=?").run(id);
     return conference(
       db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
     );
@@ -605,35 +646,45 @@ export const store = {
       .prepare("SELECT * FROM sessions WHERE id=? AND conference_id=?")
       .get(sessionId, conferenceId) as any;
     if (!existing) throw Error("NOT_FOUND");
-    
+
     // Validate session times are within conference bounds
-    const conf = db.prepare("SELECT * FROM conferences WHERE id=?").get(conferenceId) as any;
-    if (new Date(input.startsAt) < new Date(conf.starts_at) || 
-        new Date(input.endsAt) > new Date(conf.ends_at)) {
+    const conf = db
+      .prepare("SELECT * FROM conferences WHERE id=?")
+      .get(conferenceId) as any;
+    if (
+      new Date(input.startsAt) < new Date(conf.starts_at) ||
+      new Date(input.endsAt) > new Date(conf.ends_at)
+    ) {
       throw Error("SESSION_OUTSIDE_CONFERENCE");
     }
-    
+
     // Validate end time is after start time
     if (new Date(input.endsAt) <= new Date(input.startsAt)) {
       throw Error("INVALID_TIME_RANGE");
     }
-    
+
     // Validate room exists and capacity doesn't exceed room capacity
     const roomData = db
-      .prepare("SELECT * FROM rooms WHERE conference_id=? AND lower(name)=lower(?)")
+      .prepare(
+        "SELECT * FROM rooms WHERE conference_id=? AND lower(name)=lower(?)",
+      )
       .get(conferenceId, input.room) as any;
     if (!roomData) throw Error("ROOM_NOT_FOUND");
     if (input.capacity > roomData.capacity) throw Error("CAPACITY_EXCEEDED");
-    
+
     // Validate track exists
-    if (!db
-      .prepare("SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?)")
-      .get(conferenceId, input.track)) {
+    if (
+      !db
+        .prepare(
+          "SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?)",
+        )
+        .get(conferenceId, input.track)
+    ) {
       throw Error("TRACK_NOT_FOUND");
     }
-    
+
     db.prepare(
-      "UPDATE sessions SET title=?,abstract=?,track=?,room=?,starts_at=?,ends_at=?,capacity=?,speaker_id=? WHERE id=?"
+      "UPDATE sessions SET title=?,abstract=?,track=?,room=?,starts_at=?,ends_at=?,capacity=?,speaker_id=? WHERE id=?",
     ).run(
       input.title,
       input.abstract,
@@ -645,7 +696,9 @@ export const store = {
       input.speakerId,
       sessionId,
     );
-    return session(db.prepare("SELECT * FROM sessions WHERE id=?").get(sessionId));
+    return session(
+      db.prepare("SELECT * FROM sessions WHERE id=?").get(sessionId),
+    );
   },
   deleteSession: (
     conferenceId: number,
@@ -657,17 +710,19 @@ export const store = {
       .prepare("SELECT * FROM sessions WHERE id=? AND conference_id=?")
       .get(sessionId, conferenceId) as any;
     if (!existing) throw Error("NOT_FOUND");
-    
+
     // Check if session has agenda entries (attendees have added it to their agenda)
     const hasAgenda = db
       .prepare("SELECT 1 FROM agenda WHERE session_id=?")
       .get(sessionId);
     if (hasAgenda) throw Error("SESSION_IN_USE");
-    
+
     // Check if conference is published
-    const conf = db.prepare("SELECT * FROM conferences WHERE id=?").get(conferenceId) as any;
+    const conf = db
+      .prepare("SELECT * FROM conferences WHERE id=?")
+      .get(conferenceId) as any;
     if (conf.status === "PUBLISHED") throw Error("CANNOT_DELETE_PUBLISHED");
-    
+
     db.prepare("DELETE FROM sessions WHERE id=?").run(sessionId);
   },
   cancelSession: (
@@ -682,11 +737,13 @@ export const store = {
       .get(sessionId, conferenceId) as any;
     if (!existing) throw Error("NOT_FOUND");
     if (existing.status === "CANCELLED") throw Error("ALREADY_CANCELLED");
-    
+
     db.prepare(
-      "UPDATE sessions SET status='CANCELLED', cancelled_reason=? WHERE id=?"
+      "UPDATE sessions SET status='CANCELLED', cancelled_reason=? WHERE id=?",
     ).run(reason, sessionId);
-    
-    return session(db.prepare("SELECT * FROM sessions WHERE id=?").get(sessionId));
+
+    return session(
+      db.prepare("SELECT * FROM sessions WHERE id=?").get(sessionId),
+    );
   },
 };

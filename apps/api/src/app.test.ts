@@ -81,7 +81,12 @@ describe("US-2.1 create a conference draft", () => {
     const r = await request(app)
       .post("/api/conferences")
       .set("Authorization", `Bearer ${t}`)
-      .send(draft({ startsAt: "2027-05-02T09:00:00", endsAt: "2027-05-01T09:00:00" }));
+      .send(
+        draft({
+          startsAt: "2027-05-02T09:00:00",
+          endsAt: "2027-05-01T09:00:00",
+        }),
+      );
     expect(r.status).toBe(400);
   });
   it("rejects a non-positive capacity", async () => {
@@ -130,7 +135,10 @@ describe("US-2.2 configure rooms and tracks", () => {
     capacity: 50,
     ...over,
   });
-  const createDraft = async (t: string, over: Partial<Record<string, unknown>> = {}) =>
+  const createDraft = async (
+    t: string,
+    over: Partial<Record<string, unknown>> = {},
+  ) =>
     (
       await request(app)
         .post("/api/conferences")
@@ -250,5 +258,140 @@ describe("US-2.2 configure rooms and tracks", () => {
       .delete(`/api/conferences/1/tracks/${r.body.id}`)
       .set("Authorization", `Bearer ${t}`);
     expect(del.status).toBe(409);
+  });
+});
+describe("US-2.3 preview and publish a conference", () => {
+  const draft = (over: Partial<Record<string, unknown>> = {}) => ({
+    title: "Publish Ready Conference",
+    summary: "A brand new gathering for the community.",
+    venue: "Test Hall",
+    city: "Cairo",
+    startsAt: "2027-07-01T09:00:00",
+    endsAt: "2027-07-02T17:00:00",
+    timezone: "Africa/Cairo",
+    capacity: 50,
+    ...over,
+  });
+  const createDraft = async (
+    t: string,
+    over: Partial<Record<string, unknown>> = {},
+  ) =>
+    (
+      await request(app)
+        .post("/api/conferences")
+        .set("Authorization", `Bearer ${t}`)
+        .send(draft(over))
+    ).body.id;
+  const addRoom = async (t: string, id: number) =>
+    (
+      await request(app)
+        .post(`/api/conferences/${id}/rooms`)
+        .set("Authorization", `Bearer ${t}`)
+        .send({ name: "Main Hall", capacity: 50 })
+    ).body;
+  const addTrack = async (t: string, id: number) =>
+    (
+      await request(app)
+        .post(`/api/conferences/${id}/tracks`)
+        .set("Authorization", `Bearer ${t}`)
+        .send({ name: "General" })
+    ).body;
+  const addSession = async (
+    t: string,
+    id: number,
+    room: string,
+    track: string,
+  ) =>
+    request(app)
+      .post(`/api/conferences/${id}/sessions`)
+      .set("Authorization", `Bearer ${t}`)
+      .send({
+        title: "A Great Session Title",
+        abstract:
+          "A sufficiently long abstract describing the session in detail.",
+        track,
+        room,
+        startsAt: "2027-07-01T10:00:00",
+        endsAt: "2027-07-01T10:45:00",
+        capacity: 30,
+        speakerId: 3,
+      });
+  it("lets the owning organizer preview their draft", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    const r = await request(app)
+      .get(`/api/conferences/${id}`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe("DRAFT");
+  });
+  it("keeps a draft private from an attendee", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    const at = await login("attendee");
+    const r = await request(app)
+      .get(`/api/conferences/${id}`)
+      .set("Authorization", `Bearer ${at}`);
+    expect(r.status).toBe(403);
+  });
+  it("rejects publishing without a room", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    const r = await request(app)
+      .post(`/api/conferences/${id}/publish`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(r.status).toBe(400);
+  });
+  it("rejects publishing without a session", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    await addRoom(t, id);
+    const r = await request(app)
+      .post(`/api/conferences/${id}/publish`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(r.status).toBe(400);
+  });
+  it("publishes a draft once it has a room and a session, and it becomes publicly discoverable", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    const room = await addRoom(t, id);
+    const track = await addTrack(t, id);
+    const session = await addSession(t, id, room.name, track.name);
+    expect(session.status).toBe(201);
+    const published = await request(app)
+      .post(`/api/conferences/${id}/publish`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(published.status).toBe(200);
+    expect(published.body.status).toBe("PUBLISHED");
+    const at = await login("attendee");
+    const list = await request(app)
+      .get("/api/conferences")
+      .set("Authorization", `Bearer ${at}`);
+    expect(list.body.some((x: any) => x.id === id)).toBe(true);
+  });
+  it("publishing an already-published conference is idempotent", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    const room = await addRoom(t, id);
+    const track = await addTrack(t, id);
+    await addSession(t, id, room.name, track.name);
+    const first = await request(app)
+      .post(`/api/conferences/${id}/publish`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(first.status).toBe(200);
+    const second = await request(app)
+      .post(`/api/conferences/${id}/publish`)
+      .set("Authorization", `Bearer ${t}`);
+    expect(second.status).toBe(200);
+    expect(second.body.status).toBe("PUBLISHED");
+  });
+  it("blocks an attendee from publishing", async () => {
+    const t = await login("organizer");
+    const id = await createDraft(t);
+    const at = await login("attendee");
+    const r = await request(app)
+      .post(`/api/conferences/${id}/publish`)
+      .set("Authorization", `Bearer ${at}`);
+    expect(r.status).toBe(403);
   });
 });

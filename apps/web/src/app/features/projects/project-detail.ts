@@ -29,6 +29,11 @@ import { CommonModule } from '@angular/common';
           <a class="btn small secondary" [routerLink]="['/conferences', c.id, 'rooms']"
             >Rooms & tracks</a
           >
+          @if (c.status === 'DRAFT') {
+            <button class="btn small primary" [disabled]="publishing()" (click)="publish()">
+              {{ publishing() ? 'Publishing…' : 'Publish' }}
+            </button>
+          }
         }
       </div>
       <div class="registration-card">
@@ -330,6 +335,7 @@ export class ProjectDetail {
   rooms = signal<Room[]>([]);
   tracks = signal<Track[]>([]);
   toast = signal<string | null>(null);
+  publishing = signal(false);
   cancelFormData = { sessionId: 0, reason: '' };
   showCancelModal = signal<boolean>(false);
   
@@ -443,6 +449,24 @@ export class ProjectDetail {
   
   register(id: number) {
     this.api.register(id).subscribe((x) => this.conference.set(x));
+  }
+
+  publish() {
+    const c = this.conference();
+    if (!c) return;
+    this.errorMessage.set(null);
+    this.publishing.set(true);
+    this.api.publishConference(c.id).subscribe({
+      next: () => {
+        this.publishing.set(false);
+        this.showToast('Conference published!');
+        this.load();
+      },
+      error: (err) => {
+        this.publishing.set(false);
+        this.errorMessage.set(err.error?.message || 'Failed to publish conference');
+      },
+    });
   }
   
   toggle(s: Session) {
