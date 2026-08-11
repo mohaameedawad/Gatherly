@@ -12,7 +12,7 @@ import { AuthService } from '../../core/auth/auth.service';
         <p>Find the rooms where your next useful idea—and collaborator—might be waiting.</p>
       </div>
       @if (auth.hasRole('ADMIN', 'ORGANIZER')) {
-        <button class="btn primary">＋ Create conference</button>
+        <a class="btn primary" routerLink="/conferences/new">＋ Create conference</a>
       }
     </header>
     <div class="toolbar">

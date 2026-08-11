@@ -16,6 +16,9 @@ import { AuthService } from '../../core/auth/auth.service';
           <span>◷ {{ date(c.startsAt) }}</span
           ><span>⌖ {{ c.venue }}, {{ c.city }}</span>
         </div>
+        @if (auth.hasRole('ADMIN') || auth.user()?.id === c.organizerId) {
+          <a class="btn small" [routerLink]="['/conferences', c.id, 'edit']">Edit draft</a>
+        }
       </div>
       <div class="registration-card">
         <span>Registration</span><strong>{{ c.registrations }} / {{ c.capacity }}</strong>

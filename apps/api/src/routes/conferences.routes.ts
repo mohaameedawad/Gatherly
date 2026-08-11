@@ -18,20 +18,59 @@ conferencesRouter.get("/:id", (req, res) => {
     return res.status(403).json({ message: "Conference is not published" });
   res.json(c);
 });
+const conferenceDraftSchema = z
+  .object({
+    title: z.string().min(3),
+    summary: z.string().min(1),
+    venue: z.string().min(2),
+    city: z.string().min(2),
+    startsAt: z.iso.datetime({ local: true }),
+    endsAt: z.iso.datetime({ local: true }),
+    timezone: z.string().min(1),
+    capacity: z.number().int().positive(),
+  })
+  .refine((d) => new Date(d.endsAt) > new Date(d.startsAt), {
+    message: "End date must be later than start date",
+    path: ["endsAt"],
+  });
+conferencesRouter.post("/", authorize("ADMIN", "ORGANIZER"), (req, res) => {
+  const x = conferenceDraftSchema.safeParse(req.body);
+  if (!x.success)
+    return res.status(400).json({
+      message: "Conference validation failed",
+      issues: x.error.issues,
+    });
+  res.status(201).json(store.createConference(x.data, req.user!.id));
+});
+conferencesRouter.patch("/:id", authorize("ADMIN", "ORGANIZER"), (req, res) => {
+  const x = conferenceDraftSchema.safeParse(req.body);
+  if (!x.success)
+    return res.status(400).json({
+      message: "Conference validation failed",
+      issues: x.error.issues,
+    });
+  try {
+    res.json(store.updateConference(+req.params.id, req.user!, x.data));
+  } catch (e) {
+    const m = (e as Error).message;
+    res.status(m === "NOT_FOUND" ? 404 : 403).json({
+      message:
+        m === "NOT_FOUND"
+          ? "Conference not found"
+          : "You do not own this conference",
+    });
+  }
+});
 conferencesRouter.post("/:id/register", authorize("ATTENDEE"), (req, res) => {
   try {
     store.register(+req.params.id, req.user!.id);
     res.status(201).json(store.conference(+req.params.id, req.user!.id));
   } catch (e) {
     const m = (e as Error).message;
-    res
-      .status(m === "NOT_FOUND" ? 404 : 409)
-      .json({
-        message:
-          m === "SOLD_OUT"
-            ? "Conference is at capacity"
-            : "Conference not found",
-      });
+    res.status(m === "NOT_FOUND" ? 404 : 409).json({
+      message:
+        m === "SOLD_OUT" ? "Conference is at capacity" : "Conference not found",
+    });
   }
 });
 conferencesRouter.patch(

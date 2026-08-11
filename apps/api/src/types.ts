@@ -21,6 +21,7 @@ export type Conference = {
   capacity: number;
   organizerId: number;
   theme: string;
+  timezone: string;
 };
 export type Session = {
   id: number;

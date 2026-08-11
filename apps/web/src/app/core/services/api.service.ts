@@ -1,2 +1,33 @@
-import {inject,Injectable} from '@angular/core';import {HttpClient} from '@angular/common/http';import {Conference,ConferenceDetail,User} from '../models/models';
-@Injectable({providedIn:'root'})export class ApiService{private h=inject(HttpClient);private api='http://localhost:3000/api';conferences(){return this.h.get<Conference[]>(`${this.api}/conferences`)}conference(id:string){return this.h.get<ConferenceDetail>(`${this.api}/conferences/${id}`)}register(id:number){return this.h.post<ConferenceDetail>(`${this.api}/conferences/${id}/register`,{})}toggleAgenda(id:number){return this.h.patch<{selected:boolean}>(`${this.api}/conferences/sessions/${id}/agenda`,{})}users(){return this.h.get<User[]>(`${this.api}/admin/users`)}toggleUser(id:number){return this.h.patch<User>(`${this.api}/admin/users/${id}/toggle`,{})}}
+import { inject, Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Conference, ConferenceDetail, User } from '../models/models';
+type ConferenceDraft = Omit<Conference, 'id' | 'slug' | 'status' | 'organizerId' | 'theme'>;
+@Injectable({ providedIn: 'root' })
+export class ApiService {
+  private h = inject(HttpClient);
+  private api = 'http://localhost:3000/api';
+  conferences() {
+    return this.h.get<Conference[]>(`${this.api}/conferences`);
+  }
+  conference(id: string) {
+    return this.h.get<ConferenceDetail>(`${this.api}/conferences/${id}`);
+  }
+  createConference(input: ConferenceDraft) {
+    return this.h.post<Conference>(`${this.api}/conferences`, input);
+  }
+  updateConference(id: number, input: ConferenceDraft) {
+    return this.h.patch<Conference>(`${this.api}/conferences/${id}`, input);
+  }
+  register(id: number) {
+    return this.h.post<ConferenceDetail>(`${this.api}/conferences/${id}/register`, {});
+  }
+  toggleAgenda(id: number) {
+    return this.h.patch<{ selected: boolean }>(`${this.api}/conferences/sessions/${id}/agenda`, {});
+  }
+  users() {
+    return this.h.get<User[]>(`${this.api}/admin/users`);
+  }
+  toggleUser(id: number) {
+    return this.h.patch<User>(`${this.api}/admin/users/${id}/toggle`, {});
+  }
+}

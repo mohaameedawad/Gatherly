@@ -36,7 +36,7 @@ reviewed, not yet committed) → `Committed` (pr-manager pushed it).
 | US-1.2  | Verify an email address                     | Not started |
 | US-1.3  | Reset or change a password                  | Not started |
 | US-1.4  | Manage a personal profile                   | Not started |
-| US-2.1  | Create a conference draft                   | Not started |
+| US-2.1  | Create a conference draft                   | Completed   |
 | US-2.2  | Configure rooms and tracks                  | Not started |
 | US-2.3  | Preview and publish a conference            | Not started |
 | US-2.4  | Cancel or complete a conference             | Not started |

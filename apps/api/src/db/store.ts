@@ -15,10 +15,17 @@ mkdirSync(dirname(path), { recursive: true });
 const db = new DatabaseSync(path);
 db.exec(`PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,name TEXT,email TEXT UNIQUE,password_hash TEXT,role TEXT,avatar TEXT,active INTEGER);
-CREATE TABLE IF NOT EXISTS conferences(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,summary TEXT,venue TEXT,city TEXT,starts_at TEXT,ends_at TEXT,status TEXT,capacity INTEGER,organizer_id INTEGER,theme TEXT);
+CREATE TABLE IF NOT EXISTS conferences(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,summary TEXT,venue TEXT,city TEXT,starts_at TEXT,ends_at TEXT,status TEXT,capacity INTEGER,organizer_id INTEGER,theme TEXT,timezone TEXT);
 CREATE TABLE IF NOT EXISTS sessions(id INTEGER PRIMARY KEY,conference_id INTEGER,title TEXT,abstract TEXT,track TEXT,room TEXT,starts_at TEXT,ends_at TEXT,capacity INTEGER,speaker_id INTEGER);
 CREATE TABLE IF NOT EXISTS registrations(conference_id INTEGER,user_id INTEGER,status TEXT DEFAULT 'CONFIRMED',PRIMARY KEY(conference_id,user_id));
 CREATE TABLE IF NOT EXISTS agenda(user_id INTEGER,session_id INTEGER,PRIMARY KEY(user_id,session_id));`);
+// Idempotent migration for columns added after the initial release; safe to
+// re-run against a pre-existing database file that predates them.
+try {
+  db.exec("ALTER TABLE conferences ADD COLUMN timezone TEXT");
+} catch {
+  // column already exists
+}
 if (
   (db.prepare("SELECT count(*) count FROM users").get() as { count: number })
     .count === 0
@@ -149,7 +156,14 @@ const conference = (r: any): Conference => ({
   capacity: r.capacity,
   organizerId: r.organizer_id,
   theme: r.theme,
+  timezone: r.timezone ?? "",
 });
+const slugify = (title: string) =>
+  title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || "conference";
 const session = (r: any): Session => ({
   id: r.id,
   conferenceId: r.conference_id,
@@ -278,5 +292,66 @@ export const store = {
   toggleUser: (id: number) => {
     db.prepare("UPDATE users SET active=1-active WHERE id=?").run(id);
     return store.findUserById(id);
+  },
+  createConference: (
+    input: Omit<Conference, "id" | "slug" | "status" | "organizerId" | "theme">,
+    organizerId: number,
+  ) => {
+    const base = slugify(input.title);
+    let slug = base;
+    for (
+      let n = 2;
+      db.prepare("SELECT 1 FROM conferences WHERE slug=?").get(slug);
+      n++
+    )
+      slug = `${base}-${n}`;
+    const x = db
+      .prepare(
+        "INSERT INTO conferences(title,slug,summary,venue,city,starts_at,ends_at,status,capacity,organizer_id,theme,timezone) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        input.title,
+        slug,
+        input.summary,
+        input.venue,
+        input.city,
+        input.startsAt,
+        input.endsAt,
+        "DRAFT",
+        input.capacity,
+        organizerId,
+        "#6d5dfc",
+        input.timezone,
+      );
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(x.lastInsertRowid),
+    );
+  },
+  updateConference: (
+    id: number,
+    requester: { id: number; role: Role },
+    patch: Omit<Conference, "id" | "slug" | "status" | "organizerId" | "theme">,
+  ) => {
+    const r = db.prepare("SELECT * FROM conferences WHERE id=?").get(id);
+    if (!r) throw Error("NOT_FOUND");
+    const existing = conference(r);
+    if (requester.role !== "ADMIN" && existing.organizerId !== requester.id)
+      throw Error("FORBIDDEN");
+    db.prepare(
+      "UPDATE conferences SET title=?,summary=?,venue=?,city=?,starts_at=?,ends_at=?,capacity=?,timezone=? WHERE id=?",
+    ).run(
+      patch.title,
+      patch.summary,
+      patch.venue,
+      patch.city,
+      patch.startsAt,
+      patch.endsAt,
+      patch.capacity,
+      patch.timezone,
+      id,
+    );
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
+    );
   },
 };
