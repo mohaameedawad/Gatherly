@@ -203,8 +203,8 @@ import { CommonModule } from '@angular/common';
               <label style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Search</label>
               <input 
                 type="text" 
-                [(ngModel)]="filters.search" 
-                (ngModelChange)="applyFilters()"
+                [ngModel]="filterSearch()" 
+                (ngModelChange)="filterSearch.set($event); applyFilters()"
                 placeholder="Search title or abstract..."
                 style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem;">
             </div>
@@ -212,8 +212,8 @@ import { CommonModule } from '@angular/common';
             <div>
               <label style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Day</label>
               <select 
-                [(ngModel)]="filters.day" 
-                (ngModelChange)="applyFilters()"
+                [ngModel]="filterDay()" 
+                (ngModelChange)="filterDay.set($event); applyFilters()"
                 style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem;">
                 <option value="">All days</option>
                 @for (day of uniqueDays(); track day) {
@@ -225,8 +225,8 @@ import { CommonModule } from '@angular/common';
             <div>
               <label style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Track</label>
               <select 
-                [(ngModel)]="filters.track" 
-                (ngModelChange)="applyFilters()"
+                [ngModel]="filterTrack()" 
+                (ngModelChange)="filterTrack.set($event); applyFilters()"
                 style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem;">
                 <option value="">All tracks</option>
                 @for (track of uniqueTracks(); track track) {
@@ -238,8 +238,8 @@ import { CommonModule } from '@angular/common';
             <div>
               <label style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Room</label>
               <select 
-                [(ngModel)]="filters.room" 
-                (ngModelChange)="applyFilters()"
+                [ngModel]="filterRoom()" 
+                (ngModelChange)="filterRoom.set($event); applyFilters()"
                 style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.875rem;">
                 <option value="">All rooms</option>
                 @for (room of uniqueRooms(); track room) {
@@ -339,13 +339,11 @@ export class ProjectDetail {
   cancelFormData = { sessionId: 0, reason: '' };
   showCancelModal = signal<boolean>(false);
   
-  // Filters
-  filters = {
-    search: '',
-    day: '',
-    track: '',
-    room: '',
-  };
+  // signals so computed() can track them
+  filterSearch = signal('');
+  filterDay = signal('');
+  filterTrack = signal('');
+  filterRoom = signal('');
   
   // Computed values for filter options
   uniqueDays = computed(() => {
@@ -382,35 +380,26 @@ export class ProjectDetail {
     
     let sessions = c.sessions;
     
-    // Filter by search text
-    if (this.filters.search.trim()) {
-      const search = this.filters.search.toLowerCase();
-      sessions = sessions.filter(s => 
-        s.title.toLowerCase().includes(search) || 
+    if (this.filterSearch().trim()) {
+      const search = this.filterSearch().toLowerCase();
+      sessions = sessions.filter(s =>
+        s.title.toLowerCase().includes(search) ||
         s.abstract.toLowerCase().includes(search)
       );
     }
-    
-    // Filter by day
-    if (this.filters.day) {
+    if (this.filterDay()) {
       sessions = sessions.filter(s => {
-        const date = new Date(s.startsAt).toLocaleDateString('en', { 
-          weekday: 'short', 
-          month: 'short', 
-          day: 'numeric' 
+        const date = new Date(s.startsAt).toLocaleDateString('en', {
+          weekday: 'short', month: 'short', day: 'numeric',
         });
-        return date === this.filters.day;
+        return date === this.filterDay();
       });
     }
-    
-    // Filter by track
-    if (this.filters.track) {
-      sessions = sessions.filter(s => s.track === this.filters.track);
+    if (this.filterTrack()) {
+      sessions = sessions.filter(s => s.track === this.filterTrack());
     }
-    
-    // Filter by room
-    if (this.filters.room) {
-      sessions = sessions.filter(s => s.room === this.filters.room);
+    if (this.filterRoom()) {
+      sessions = sessions.filter(s => s.room === this.filterRoom());
     }
     
     return sessions;
@@ -433,10 +422,10 @@ export class ProjectDetail {
     // Watch for query param changes
     effect(() => {
       this.p.queryParams.subscribe(params => {
-        this.filters.search = params['search'] || '';
-        this.filters.day = params['day'] || '';
-        this.filters.track = params['track'] || '';
-        this.filters.room = params['room'] || '';
+        this.filterSearch.set(params['search'] || '');
+        this.filterDay.set(params['day'] || '');
+        this.filterTrack.set(params['track'] || '');
+        this.filterRoom.set(params['room'] || '');
       });
     });
   }
@@ -622,19 +611,18 @@ export class ProjectDetail {
   
   loadFiltersFromUrl() {
     const params = this.p.snapshot.queryParams;
-    this.filters.search = params['search'] || '';
-    this.filters.day = params['day'] || '';
-    this.filters.track = params['track'] || '';
-    this.filters.room = params['room'] || '';
+    this.filterSearch.set(params['search'] || '');
+    this.filterDay.set(params['day'] || '');
+    this.filterTrack.set(params['track'] || '');
+    this.filterRoom.set(params['room'] || '');
   }
   
   applyFilters() {
-    // Update URL with current filters
     const queryParams: any = {};
-    if (this.filters.search) queryParams.search = this.filters.search;
-    if (this.filters.day) queryParams.day = this.filters.day;
-    if (this.filters.track) queryParams.track = this.filters.track;
-    if (this.filters.room) queryParams.room = this.filters.room;
+    if (this.filterSearch()) queryParams.search = this.filterSearch();
+    if (this.filterDay()) queryParams.day = this.filterDay();
+    if (this.filterTrack()) queryParams.track = this.filterTrack();
+    if (this.filterRoom()) queryParams.room = this.filterRoom();
     
     this.router.navigate([], {
       relativeTo: this.p,
@@ -644,12 +632,10 @@ export class ProjectDetail {
   }
   
   clearFilters() {
-    this.filters = {
-      search: '',
-      day: '',
-      track: '',
-      room: '',
-    };
+    this.filterSearch.set('');
+    this.filterDay.set('');
+    this.filterTrack.set('');
+    this.filterRoom.set('');
     this.router.navigate([], {
       relativeTo: this.p,
       queryParams: {}
@@ -657,7 +643,7 @@ export class ProjectDetail {
   }
   
   hasActiveFilters(): boolean {
-    return !!(this.filters.search || this.filters.day || this.filters.track || this.filters.room);
+    return !!(this.filterSearch() || this.filterDay() || this.filterTrack() || this.filterRoom());
   }
   
   date = (x: string) =>

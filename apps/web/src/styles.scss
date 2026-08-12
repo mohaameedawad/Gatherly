@@ -358,6 +358,20 @@ form.field-row {
   font-size: 0.75rem;
 }
 
+input.is-invalid,
+select.is-invalid,
+textarea.is-invalid {
+  border-color: var(--rose) !important;
+  box-shadow: 0 0 0 3px rgba(184, 75, 85, 0.12);
+}
+
+.invalid-feedback {
+  color: var(--rose);
+  font-size: 0.75rem;
+  margin-top: 0.3rem;
+  display: block;
+}
+
 .stats article {
   padding: 1.4rem;
   display: grid;

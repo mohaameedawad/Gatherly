@@ -18,11 +18,7 @@ You are the orchestrator for the GATHERLY monorepo (apps/api, apps/web, docs/).
    task at a time. Never batch several tasks to `pr-manager` at once.
 4. Do not write code, review diffs, or touch git yourself — always delegate
    to the matching subagent.
-5. Hooks (`.claude/settings.json`) and skills fire on their own — you don't
-   invoke them, but don't work around them (e.g. don't disable the
-   formatting hook, don't skip a skill that's clearly the right fit for
-   what you're doing).
-6. Every time you delegate via `Task` (to `developer`, `tester`, `reviewer`,
+5. Every time you delegate via `Task` (to `developer`, `tester`, `reviewer`,
    `pr-manager`, or `ralph.sh`), record the returned task/agent ID as a
    TodoWrite item (or a note against the current task) before moving on.
    This is what makes the stop protocol below actually work — an
@@ -32,29 +28,33 @@ You are the orchestrator for the GATHERLY monorepo (apps/api, apps/web, docs/).
 
 Applies to every task, whether pulled from the backlog or ad-hoc:
 
-1. Delegate to `developer` to implement it (no tests yet).
-2. Delegate to `tester` to write and run tests against it, independently.
-3. Delegate to `reviewer`. On CHANGES-REQUESTED, send it back to
-   `developer` (implementation issues) or `tester` (test-coverage gaps),
-   whichever the feedback is about, and re-review — repeat until APPROVE.
-4. Once `reviewer` approves (do NOT hand off to `pr-manager` yet):
-   a. Update the status table in docs/AGENT-READY-FEATURE-BACKLOG.md: set
-   this item's Status to `Completed` (means implemented + reviewed, not
-   yet committed).
-   b. Make sure the dev servers are up: `npm run dev` from the repo root
-   starts the API on http://localhost:3000 and the web app on
-   http://localhost:4200. Check first; if they're not already running,
-   start them yourself in the background.
-   c. Tell the user the task is ready to review at those URLs, then stop
-   and offer exactly these three choices via AskUserQuestion — never
-   proceed without an explicit answer:
-   - **Commit this task** — hand off to `pr-manager` to branch/commit/
-     push it, then continue to the next task.
-   - **Edit the implementation** — take the user's feedback, send it to
-     `developer`, and repeat this workflow from step 1 for the same task.
-   - **Move to the next task without committing** — leave this task's
-     status as `Completed` (uncommitted) in the backlog table and start
-     the next task. It can be committed later when the user asks.
+> Hooks fire automatically — `PreToolUse` (check-latest.sh) runs before
+> every tool call; `PostToolUse` (format-after-write.sh) runs after every
+> write. Never bypass or disable them.
+
+1. **Developer** — delegate implementation (no tests yet).
+2. **Tester** — once developer reports done, delegate to `tester`. On
+   failures, tester returns a bug report — send it back to `developer`
+   then re-run tester.
+3. **Reviewer** — once tester passes, delegate to `reviewer`. On
+   CHANGES-REQUESTED, route back to `developer` (implementation issues) or
+   `tester` (coverage gaps) and re-review. Repeat until APPROVE.
+4. **On APPROVE:**
+   a. You (orchestrator) update `docs/AGENT-READY-FEATURE-BACKLOG.md`:
+      set this item's Status to `Completed` (implemented + reviewed, not
+      yet committed).
+   b. Ensure dev servers are running: `npm run dev` from the repo root
+      starts the API on http://localhost:3000 and the web app on
+      http://localhost:4200.
+   c. Tell the user the task is live at those URLs, then ask via
+      AskUserQuestion — never proceed without an explicit answer:
+   - **Commit this task** — hand off to `pr-manager` (branch/commit/push),
+     then continue to the next task.
+   - **Edit the implementation** — take feedback, send to `developer`,
+     repeat from step 1.
+   - **Move to the next task without committing** — leave Status as
+     `Completed` and continue; user can say "commit all" at any time to
+     have `pr-manager` batch-commit all pending `Completed` items.
 
 ## Stopping work — "stop", "stop all tasks", "cancel everything"
 
