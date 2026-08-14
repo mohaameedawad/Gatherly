@@ -12,18 +12,60 @@ This backlog describes the missing features for Gatherly using epics, user stori
 
 ## Dependency order
 
-| Order | Epic | Depends on |
-| --- | --- | --- |
-| 1 | EPIC 1 — User accounts | Existing authentication and RBAC |
-| 2 | EPIC 2 — Conference management | Existing authentication and RBAC |
-| 3 | EPIC 3 — Session management | Conference management |
-| 4 | EPIC 4 — Speaker proposals | Conference and session management |
-| 5 | EPIC 5 — Scheduling | Session management |
-| 6 | EPIC 6 — Registration and waitlist | Published conferences |
-| 7 | EPIC 7 — Tickets and check-in | Confirmed registration |
-| 8 | EPIC 8 — Notifications | Domain actions from other epics |
-| 9 | EPIC 9 — Feedback and analytics | Check-in and attendance data |
-| 10 | EPIC 10 — Paid tickets | Conference publishing and registration |
+| Order | Epic                               | Depends on                             |
+| ----- | ---------------------------------- | -------------------------------------- |
+| 1     | EPIC 1 — User accounts             | Existing authentication and RBAC       |
+| 2     | EPIC 2 — Conference management     | Existing authentication and RBAC       |
+| 3     | EPIC 3 — Session management        | Conference management                  |
+| 4     | EPIC 4 — Speaker proposals         | Conference and session management      |
+| 5     | EPIC 5 — Scheduling                | Session management                     |
+| 6     | EPIC 6 — Registration and waitlist | Published conferences                  |
+| 7     | EPIC 7 — Tickets and check-in      | Confirmed registration                 |
+| 8     | EPIC 8 — Notifications             | Domain actions from other epics        |
+| 9     | EPIC 9 — Feedback and analytics    | Check-in and attendance data           |
+| 10    | EPIC 10 — Paid tickets             | Conference publishing and registration |
+
+## Task status
+
+Maintained by the orchestrator. `Not started` → `Completed` (implemented +
+reviewed, not yet committed) → `Committed` (pr-manager pushed it).
+
+| ID      | Story                                       | Status      |
+| ------- | ------------------------------------------- | ----------- |
+| US-1.1  | Create an attendee account                  | Not started |
+| US-1.2  | Verify an email address                     | Not started |
+| US-1.3  | Reset or change a password                  | Not started |
+| US-1.4  | Manage a personal profile                   | Not started |
+| US-2.1  | Create a conference draft                   | Completed   |
+| US-2.2  | Configure rooms and tracks                  | Completed   |
+| US-2.3  | Preview and publish a conference            | Completed   |
+| US-2.4  | Cancel or complete a conference             | Committed   |
+| US-3.1  | Create and edit a session                   | Completed   |
+| US-3.2  | Cancel or delete a session                  | Completed   |
+| US-3.3  | Browse and filter the schedule              | Completed   |
+| US-4.1  | Submit a session proposal                   | Not started |
+| US-4.2  | Review a proposal                           | Not started |
+| US-4.3  | Convert an accepted proposal into a session | Not started |
+| US-5.1  | Prevent room conflicts                      | Not started |
+| US-5.2  | Prevent speaker conflicts                   | Not started |
+| US-5.3  | Warn about agenda conflicts                 | Not started |
+| US-5.4  | Export a calendar                           | Not started |
+| US-6.1  | View My Events and cancel registration      | Not started |
+| US-6.2  | Join a waitlist                             | Not started |
+| US-6.3  | Promote the next attendee                   | Not started |
+| US-7.1  | Receive a QR ticket                         | Not started |
+| US-7.2  | Check in an attendee                        | Not started |
+| US-7.3  | View live attendance                        | Not started |
+| US-8.1  | Receive in-app notifications                | Not started |
+| US-8.2  | Receive email notifications                 | Not started |
+| US-8.3  | Manage notification preferences             | Not started |
+| US-9.1  | Rate a session                              | Not started |
+| US-9.2  | Submit conference feedback                  | Not started |
+| US-9.3  | View conference analytics                   | Not started |
+| US-10.1 | Configure ticket types                      | Not started |
+| US-10.2 | Apply a promo code                          | Not started |
+| US-10.3 | Pay for a registration                      | Not started |
+| US-10.4 | Cancel and refund a paid ticket             | Not started |
 
 ---
 
@@ -606,21 +648,21 @@ This backlog describes the missing features for Gatherly using epics, user stori
 
 # Global authorization matrix
 
-| Capability | Admin | Organizer | Speaker | Attendee | Anonymous |
-| --- | :---: | :---: | :---: | :---: | :---: |
-| Browse published conferences | Yes | Yes | Yes | Yes | Yes |
-| View draft conference | All | Owned only | No | No | No |
-| Create/edit/publish conference | All | Owned only | No | No | No |
-| Manage sessions | All | Owned only | No | No | No |
-| Submit proposal | No | No | Own | No | No |
-| Review proposal | All | Owned conference | No | No | No |
-| Register or join waitlist | No | No | No | Own | No |
-| Manage personal agenda | No | No | No | Own | No |
-| Access attendee ticket | Verify | Verify owned conference | No | Own | No |
-| Perform check-in | All | Owned/assigned conference | No | No | No |
-| Submit feedback | No | No | No | Own attended event | No |
-| View analytics | All | Owned conference | Limited aggregate | No | No |
-| Manage users and roles | Yes | No | No | No | No |
+| Capability                     | Admin  |         Organizer         |      Speaker      |      Attendee      | Anonymous |
+| ------------------------------ | :----: | :-----------------------: | :---------------: | :----------------: | :-------: |
+| Browse published conferences   |  Yes   |            Yes            |        Yes        |        Yes         |    Yes    |
+| View draft conference          |  All   |        Owned only         |        No         |         No         |    No     |
+| Create/edit/publish conference |  All   |        Owned only         |        No         |         No         |    No     |
+| Manage sessions                |  All   |        Owned only         |        No         |         No         |    No     |
+| Submit proposal                |   No   |            No             |        Own        |         No         |    No     |
+| Review proposal                |  All   |     Owned conference      |        No         |         No         |    No     |
+| Register or join waitlist      |   No   |            No             |        No         |        Own         |    No     |
+| Manage personal agenda         |   No   |            No             |        No         |        Own         |    No     |
+| Access attendee ticket         | Verify |  Verify owned conference  |        No         |        Own         |    No     |
+| Perform check-in               |  All   | Owned/assigned conference |        No         |         No         |    No     |
+| Submit feedback                |   No   |            No             |        No         | Own attended event |    No     |
+| View analytics                 |  All   |     Owned conference      | Limited aggregate |         No         |    No     |
+| Manage users and roles         |  Yes   |            No             |        No         |         No         |    No     |
 
 ## Global authorization rules
 
@@ -631,4 +673,3 @@ This backlog describes the missing features for Gatherly using epics, user stori
 5. Suspended users cannot authenticate, refresh sessions, or perform protected actions.
 6. Admin access to sensitive operational data must be recorded.
 7. Role changes, publishing, cancellation, check-in reversal, moderation, and refunds require history records.
-

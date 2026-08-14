@@ -6,7 +6,9 @@ import type {
   Conference,
   ConferenceDetail,
   Role,
+  Room,
   Session,
+  Track,
   User,
 } from "../types.js";
 
@@ -15,10 +17,36 @@ mkdirSync(dirname(path), { recursive: true });
 const db = new DatabaseSync(path);
 db.exec(`PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY,name TEXT,email TEXT UNIQUE,password_hash TEXT,role TEXT,avatar TEXT,active INTEGER);
-CREATE TABLE IF NOT EXISTS conferences(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,summary TEXT,venue TEXT,city TEXT,starts_at TEXT,ends_at TEXT,status TEXT,capacity INTEGER,organizer_id INTEGER,theme TEXT);
+CREATE TABLE IF NOT EXISTS conferences(id INTEGER PRIMARY KEY,title TEXT,slug TEXT UNIQUE,summary TEXT,venue TEXT,city TEXT,starts_at TEXT,ends_at TEXT,status TEXT,capacity INTEGER,organizer_id INTEGER,theme TEXT,timezone TEXT);
 CREATE TABLE IF NOT EXISTS sessions(id INTEGER PRIMARY KEY,conference_id INTEGER,title TEXT,abstract TEXT,track TEXT,room TEXT,starts_at TEXT,ends_at TEXT,capacity INTEGER,speaker_id INTEGER);
 CREATE TABLE IF NOT EXISTS registrations(conference_id INTEGER,user_id INTEGER,status TEXT DEFAULT 'CONFIRMED',PRIMARY KEY(conference_id,user_id));
-CREATE TABLE IF NOT EXISTS agenda(user_id INTEGER,session_id INTEGER,PRIMARY KEY(user_id,session_id));`);
+CREATE TABLE IF NOT EXISTS agenda(user_id INTEGER,session_id INTEGER,PRIMARY KEY(user_id,session_id));
+CREATE TABLE IF NOT EXISTS rooms(id INTEGER PRIMARY KEY,conference_id INTEGER,name TEXT,capacity INTEGER);
+CREATE TABLE IF NOT EXISTS tracks(id INTEGER PRIMARY KEY,conference_id INTEGER,name TEXT);
+CREATE TABLE IF NOT EXISTS conference_history(id INTEGER PRIMARY KEY,conference_id INTEGER,action TEXT,reason TEXT,actor_id INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY,user_id INTEGER,conference_id INTEGER,type TEXT,message TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);`);
+// Idempotent migration for columns added after the initial release; safe to
+// re-run against a pre-existing database file that predates them.
+try {
+  db.exec("ALTER TABLE conferences ADD COLUMN timezone TEXT");
+} catch {
+  // column already exists
+}
+try {
+  db.exec("ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'ACTIVE'");
+} catch {
+  // column already exists
+}
+try {
+  db.exec("ALTER TABLE sessions ADD COLUMN cancelled_reason TEXT");
+} catch {
+  // column already exists
+}
+try {
+  db.exec("ALTER TABLE conferences ADD COLUMN cancelled_reason TEXT");
+} catch {
+  // column already exists
+}
 if (
   (db.prepare("SELECT count(*) count FROM users").get() as { count: number })
     .count === 0
@@ -149,7 +177,15 @@ const conference = (r: any): Conference => ({
   capacity: r.capacity,
   organizerId: r.organizer_id,
   theme: r.theme,
+  timezone: r.timezone ?? "",
+  cancelledReason: r.cancelled_reason ?? undefined,
 });
+const slugify = (title: string) =>
+  title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "") || "conference";
 const session = (r: any): Session => ({
   id: r.id,
   conferenceId: r.conference_id,
@@ -161,7 +197,31 @@ const session = (r: any): Session => ({
   endsAt: r.ends_at,
   capacity: r.capacity,
   speakerId: r.speaker_id,
+  status: r.status ?? "ACTIVE",
+  cancelledReason: r.cancelled_reason ?? undefined,
 });
+const room = (r: any): Room => ({
+  id: r.id,
+  conferenceId: r.conference_id,
+  name: r.name,
+  capacity: r.capacity,
+});
+const track = (r: any): Track => ({
+  id: r.id,
+  conferenceId: r.conference_id,
+  name: r.name,
+});
+const requireOwnedConference = (
+  id: number,
+  requester: { id: number; role: Role },
+) => {
+  const r = db.prepare("SELECT * FROM conferences WHERE id=?").get(id);
+  if (!r) throw Error("NOT_FOUND");
+  const c = conference(r);
+  if (requester.role !== "ADMIN" && c.organizerId !== requester.id)
+    throw Error("FORBIDDEN");
+  return c;
+};
 export const store = {
   findUserByEmail: (email: string) => {
     const r = db
@@ -224,6 +284,8 @@ export const store = {
       db.prepare("SELECT * FROM conferences WHERE id=?").get(conferenceId),
     );
     if (!c) throw Error("NOT_FOUND");
+    if (c.status === "CANCELLED" || c.status === "COMPLETED")
+      throw Error("CONFERENCE_CLOSED");
     const count = (
       db
         .prepare(
@@ -254,11 +316,72 @@ export const store = {
   },
   createSession: (
     conferenceId: number,
-    s: Omit<Session, "id" | "conferenceId">,
+    s: Omit<Session, "id" | "conferenceId" | "status" | "cancelledReason">,
   ) => {
+    // Validate conference exists
+    const conf = db
+      .prepare("SELECT * FROM conferences WHERE id=?")
+      .get(conferenceId) as any;
+    if (!conf) throw Error("NOT_FOUND");
+
+    // Check if conference has rooms and tracks configured
+    const roomCount = (
+      db
+        .prepare("SELECT count(*) as count FROM rooms WHERE conference_id=?")
+        .get(conferenceId) as any
+    ).count;
+    const trackCount = (
+      db
+        .prepare("SELECT count(*) as count FROM tracks WHERE conference_id=?")
+        .get(conferenceId) as any
+    ).count;
+
+    if (roomCount === 0 && trackCount === 0) {
+      throw Error("NO_ROOMS_OR_TRACKS");
+    }
+    if (roomCount === 0) {
+      throw Error("NO_ROOMS_CONFIGURED");
+    }
+    if (trackCount === 0) {
+      throw Error("NO_TRACKS_CONFIGURED");
+    }
+
+    // Validate session times are within conference bounds
+    if (
+      new Date(s.startsAt) < new Date(conf.starts_at) ||
+      new Date(s.endsAt) > new Date(conf.ends_at)
+    ) {
+      throw Error("SESSION_OUTSIDE_CONFERENCE");
+    }
+
+    // Validate end time is after start time
+    if (new Date(s.endsAt) <= new Date(s.startsAt)) {
+      throw Error("INVALID_TIME_RANGE");
+    }
+
+    // Validate room exists and capacity doesn't exceed room capacity
+    const roomData = db
+      .prepare(
+        "SELECT * FROM rooms WHERE conference_id=? AND lower(name)=lower(?)",
+      )
+      .get(conferenceId, s.room) as any;
+    if (!roomData) throw Error("ROOM_NOT_FOUND");
+    if (s.capacity > roomData.capacity) throw Error("CAPACITY_EXCEEDED");
+
+    // Validate track exists
+    if (
+      !db
+        .prepare(
+          "SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?)",
+        )
+        .get(conferenceId, s.track)
+    ) {
+      throw Error("TRACK_NOT_FOUND");
+    }
+
     const x = db
       .prepare(
-        "INSERT INTO sessions(conference_id,title,abstract,track,room,starts_at,ends_at,capacity,speaker_id) VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO sessions(conference_id,title,abstract,track,room,starts_at,ends_at,capacity,speaker_id,status) VALUES(?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         conferenceId,
@@ -270,6 +393,7 @@ export const store = {
         s.endsAt,
         s.capacity,
         s.speakerId,
+        "ACTIVE",
       );
     return session(
       db.prepare("SELECT * FROM sessions WHERE id=?").get(x.lastInsertRowid),
@@ -278,5 +402,422 @@ export const store = {
   toggleUser: (id: number) => {
     db.prepare("UPDATE users SET active=1-active WHERE id=?").run(id);
     return store.findUserById(id);
+  },
+  createConference: (
+    input: Omit<Conference, "id" | "slug" | "status" | "organizerId" | "theme">,
+    organizerId: number,
+  ) => {
+    const base = slugify(input.title);
+    let slug = base;
+    for (
+      let n = 2;
+      db.prepare("SELECT 1 FROM conferences WHERE slug=?").get(slug);
+      n++
+    )
+      slug = `${base}-${n}`;
+    const x = db
+      .prepare(
+        "INSERT INTO conferences(title,slug,summary,venue,city,starts_at,ends_at,status,capacity,organizer_id,theme,timezone) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+      )
+      .run(
+        input.title,
+        slug,
+        input.summary,
+        input.venue,
+        input.city,
+        input.startsAt,
+        input.endsAt,
+        "DRAFT",
+        input.capacity,
+        organizerId,
+        "#6d5dfc",
+        input.timezone,
+      );
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(x.lastInsertRowid),
+    );
+  },
+  updateConference: (
+    id: number,
+    requester: { id: number; role: Role },
+    patch: Omit<Conference, "id" | "slug" | "status" | "organizerId" | "theme">,
+  ) => {
+    const r = db.prepare("SELECT * FROM conferences WHERE id=?").get(id);
+    if (!r) throw Error("NOT_FOUND");
+    const existing = conference(r);
+    if (requester.role !== "ADMIN" && existing.organizerId !== requester.id)
+      throw Error("FORBIDDEN");
+    db.prepare(
+      "UPDATE conferences SET title=?,summary=?,venue=?,city=?,starts_at=?,ends_at=?,capacity=?,timezone=? WHERE id=?",
+    ).run(
+      patch.title,
+      patch.summary,
+      patch.venue,
+      patch.city,
+      patch.startsAt,
+      patch.endsAt,
+      patch.capacity,
+      patch.timezone,
+      id,
+    );
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
+    );
+  },
+  publishConference: (id: number, requester: { id: number; role: Role }) => {
+    const existing = requireOwnedConference(id, requester);
+    if (existing.status === "PUBLISHED") return existing;
+    if (existing.status !== "DRAFT") throw Error("INVALID_STATUS");
+    const roomCount = (
+      db
+        .prepare("SELECT count(*) count FROM rooms WHERE conference_id=?")
+        .get(id) as any
+    ).count;
+    if (roomCount === 0) throw Error("NO_ROOMS");
+    const sessionCount = (
+      db
+        .prepare(
+          "SELECT count(*) count FROM sessions WHERE conference_id=? AND status='ACTIVE'",
+        )
+        .get(id) as any
+    ).count;
+    if (sessionCount === 0) throw Error("NO_SESSIONS");
+    db.prepare("UPDATE conferences SET status='PUBLISHED' WHERE id=?").run(id);
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
+    );
+  },
+  cancelConference: (
+    id: number,
+    requester: { id: number; role: Role },
+    reason: string,
+  ) => {
+    const existing = requireOwnedConference(id, requester);
+    if (existing.status === "CANCELLED" || existing.status === "COMPLETED")
+      throw Error("CANNOT_CANCEL");
+
+    db.prepare(
+      "UPDATE conferences SET status='CANCELLED', cancelled_reason=? WHERE id=?",
+    ).run(reason, id);
+
+    db.prepare(
+      "INSERT INTO conference_history(conference_id,action,reason,actor_id) VALUES(?,?,?,?)",
+    ).run(id, "CANCELLED", reason, requester.id);
+
+    const registered = db
+      .prepare("SELECT user_id FROM registrations WHERE conference_id=?")
+      .all(id) as any[];
+    const notify = db.prepare(
+      "INSERT INTO notifications(user_id,conference_id,type,message) VALUES(?,?,?,?)",
+    );
+    const message = `${existing.title} has been cancelled. Reason: ${reason}`;
+    registered.forEach((r) =>
+      notify.run(r.user_id, id, "CONFERENCE_CANCELLED", message),
+    );
+
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
+    );
+  },
+  completeConference: (id: number, requester: { id: number; role: Role }) => {
+    const existing = requireOwnedConference(id, requester);
+    if (existing.status !== "PUBLISHED") throw Error("CANNOT_COMPLETE");
+    if (new Date() < new Date(existing.endsAt)) throw Error("NOT_ENDED");
+
+    db.prepare("UPDATE conferences SET status='COMPLETED' WHERE id=?").run(id);
+
+    db.prepare(
+      "INSERT INTO conference_history(conference_id,action,reason,actor_id) VALUES(?,?,?,?)",
+    ).run(id, "COMPLETED", null, requester.id);
+
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
+    );
+  },
+  conferenceHistory: (id: number, requester: { id: number; role: Role }) => {
+    requireOwnedConference(id, requester);
+    return (
+      db
+        .prepare(
+          "SELECT * FROM conference_history WHERE conference_id=? ORDER BY created_at",
+        )
+        .all(id) as any[]
+    ).map((r) => ({
+      id: r.id,
+      conferenceId: r.conference_id,
+      action: r.action,
+      reason: r.reason,
+      actorId: r.actor_id,
+      createdAt: r.created_at,
+    }));
+  },
+  rooms: (
+    conferenceId: number,
+    requester: { id: number; role: Role },
+  ): Room[] => {
+    requireOwnedConference(conferenceId, requester);
+    return (
+      db
+        .prepare("SELECT * FROM rooms WHERE conference_id=? ORDER BY name")
+        .all(conferenceId) as any[]
+    ).map(room);
+  },
+  createRoom: (
+    conferenceId: number,
+    requester: { id: number; role: Role },
+    input: Omit<Room, "id" | "conferenceId">,
+  ) => {
+    const c = requireOwnedConference(conferenceId, requester);
+    if (input.capacity > c.capacity) throw Error("CAPACITY_EXCEEDED");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM rooms WHERE conference_id=? AND lower(name)=lower(?)",
+        )
+        .get(conferenceId, input.name)
+    )
+      throw Error("DUPLICATE_NAME");
+    const x = db
+      .prepare("INSERT INTO rooms(conference_id,name,capacity) VALUES(?,?,?)")
+      .run(conferenceId, input.name, input.capacity);
+    return room(
+      db.prepare("SELECT * FROM rooms WHERE id=?").get(x.lastInsertRowid),
+    );
+  },
+  updateRoom: (
+    conferenceId: number,
+    roomId: number,
+    requester: { id: number; role: Role },
+    input: Omit<Room, "id" | "conferenceId">,
+  ) => {
+    const c = requireOwnedConference(conferenceId, requester);
+    if (
+      !db
+        .prepare("SELECT 1 FROM rooms WHERE id=? AND conference_id=?")
+        .get(roomId, conferenceId)
+    )
+      throw Error("NOT_FOUND");
+    if (input.capacity > c.capacity) throw Error("CAPACITY_EXCEEDED");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM rooms WHERE conference_id=? AND lower(name)=lower(?) AND id!=?",
+        )
+        .get(conferenceId, input.name, roomId)
+    )
+      throw Error("DUPLICATE_NAME");
+    db.prepare("UPDATE rooms SET name=?,capacity=? WHERE id=?").run(
+      input.name,
+      input.capacity,
+      roomId,
+    );
+    return room(db.prepare("SELECT * FROM rooms WHERE id=?").get(roomId));
+  },
+  deleteRoom: (
+    conferenceId: number,
+    roomId: number,
+    requester: { id: number; role: Role },
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    const existing = db
+      .prepare("SELECT * FROM rooms WHERE id=? AND conference_id=?")
+      .get(roomId, conferenceId) as any;
+    if (!existing) throw Error("NOT_FOUND");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM sessions WHERE conference_id=? AND lower(room)=lower(?)",
+        )
+        .get(conferenceId, existing.name)
+    )
+      throw Error("IN_USE");
+    db.prepare("DELETE FROM rooms WHERE id=?").run(roomId);
+  },
+  tracks: (
+    conferenceId: number,
+    requester: { id: number; role: Role },
+  ): Track[] => {
+    requireOwnedConference(conferenceId, requester);
+    return (
+      db
+        .prepare("SELECT * FROM tracks WHERE conference_id=? ORDER BY name")
+        .all(conferenceId) as any[]
+    ).map(track);
+  },
+  createTrack: (
+    conferenceId: number,
+    requester: { id: number; role: Role },
+    input: Omit<Track, "id" | "conferenceId">,
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?)",
+        )
+        .get(conferenceId, input.name)
+    )
+      throw Error("DUPLICATE_NAME");
+    const x = db
+      .prepare("INSERT INTO tracks(conference_id,name) VALUES(?,?)")
+      .run(conferenceId, input.name);
+    return track(
+      db.prepare("SELECT * FROM tracks WHERE id=?").get(x.lastInsertRowid),
+    );
+  },
+  updateTrack: (
+    conferenceId: number,
+    trackId: number,
+    requester: { id: number; role: Role },
+    input: Omit<Track, "id" | "conferenceId">,
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    if (
+      !db
+        .prepare("SELECT 1 FROM tracks WHERE id=? AND conference_id=?")
+        .get(trackId, conferenceId)
+    )
+      throw Error("NOT_FOUND");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?) AND id!=?",
+        )
+        .get(conferenceId, input.name, trackId)
+    )
+      throw Error("DUPLICATE_NAME");
+    db.prepare("UPDATE tracks SET name=? WHERE id=?").run(input.name, trackId);
+    return track(db.prepare("SELECT * FROM tracks WHERE id=?").get(trackId));
+  },
+  deleteTrack: (
+    conferenceId: number,
+    trackId: number,
+    requester: { id: number; role: Role },
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    const existing = db
+      .prepare("SELECT * FROM tracks WHERE id=? AND conference_id=?")
+      .get(trackId, conferenceId) as any;
+    if (!existing) throw Error("NOT_FOUND");
+    if (
+      db
+        .prepare(
+          "SELECT 1 FROM sessions WHERE conference_id=? AND lower(track)=lower(?)",
+        )
+        .get(conferenceId, existing.name)
+    )
+      throw Error("IN_USE");
+    db.prepare("DELETE FROM tracks WHERE id=?").run(trackId);
+  },
+  updateSession: (
+    conferenceId: number,
+    sessionId: number,
+    requester: { id: number; role: Role },
+    input: Omit<Session, "id" | "conferenceId" | "status" | "cancelledReason">,
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    const existing = db
+      .prepare("SELECT * FROM sessions WHERE id=? AND conference_id=?")
+      .get(sessionId, conferenceId) as any;
+    if (!existing) throw Error("NOT_FOUND");
+
+    // Validate session times are within conference bounds
+    const conf = db
+      .prepare("SELECT * FROM conferences WHERE id=?")
+      .get(conferenceId) as any;
+    if (
+      new Date(input.startsAt) < new Date(conf.starts_at) ||
+      new Date(input.endsAt) > new Date(conf.ends_at)
+    ) {
+      throw Error("SESSION_OUTSIDE_CONFERENCE");
+    }
+
+    // Validate end time is after start time
+    if (new Date(input.endsAt) <= new Date(input.startsAt)) {
+      throw Error("INVALID_TIME_RANGE");
+    }
+
+    // Validate room exists and capacity doesn't exceed room capacity
+    const roomData = db
+      .prepare(
+        "SELECT * FROM rooms WHERE conference_id=? AND lower(name)=lower(?)",
+      )
+      .get(conferenceId, input.room) as any;
+    if (!roomData) throw Error("ROOM_NOT_FOUND");
+    if (input.capacity > roomData.capacity) throw Error("CAPACITY_EXCEEDED");
+
+    // Validate track exists
+    if (
+      !db
+        .prepare(
+          "SELECT 1 FROM tracks WHERE conference_id=? AND lower(name)=lower(?)",
+        )
+        .get(conferenceId, input.track)
+    ) {
+      throw Error("TRACK_NOT_FOUND");
+    }
+
+    db.prepare(
+      "UPDATE sessions SET title=?,abstract=?,track=?,room=?,starts_at=?,ends_at=?,capacity=?,speaker_id=? WHERE id=?",
+    ).run(
+      input.title,
+      input.abstract,
+      input.track,
+      input.room,
+      input.startsAt,
+      input.endsAt,
+      input.capacity,
+      input.speakerId,
+      sessionId,
+    );
+    return session(
+      db.prepare("SELECT * FROM sessions WHERE id=?").get(sessionId),
+    );
+  },
+  deleteSession: (
+    conferenceId: number,
+    sessionId: number,
+    requester: { id: number; role: Role },
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    const existing = db
+      .prepare("SELECT * FROM sessions WHERE id=? AND conference_id=?")
+      .get(sessionId, conferenceId) as any;
+    if (!existing) throw Error("NOT_FOUND");
+
+    // Check if session has agenda entries (attendees have added it to their agenda)
+    const hasAgenda = db
+      .prepare("SELECT 1 FROM agenda WHERE session_id=?")
+      .get(sessionId);
+    if (hasAgenda) throw Error("SESSION_IN_USE");
+
+    // Check if conference is published
+    const conf = db
+      .prepare("SELECT * FROM conferences WHERE id=?")
+      .get(conferenceId) as any;
+    if (conf.status === "PUBLISHED") throw Error("CANNOT_DELETE_PUBLISHED");
+
+    db.prepare("DELETE FROM sessions WHERE id=?").run(sessionId);
+  },
+  cancelSession: (
+    conferenceId: number,
+    sessionId: number,
+    requester: { id: number; role: Role },
+    reason: string,
+  ) => {
+    requireOwnedConference(conferenceId, requester);
+    const existing = db
+      .prepare("SELECT * FROM sessions WHERE id=? AND conference_id=?")
+      .get(sessionId, conferenceId) as any;
+    if (!existing) throw Error("NOT_FOUND");
+    if (existing.status === "CANCELLED") throw Error("ALREADY_CANCELLED");
+
+    db.prepare(
+      "UPDATE sessions SET status='CANCELLED', cancelled_reason=? WHERE id=?",
+    ).run(reason, sessionId);
+
+    return session(
+      db.prepare("SELECT * FROM sessions WHERE id=?").get(sessionId),
+    );
   },
 };

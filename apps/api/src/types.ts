@@ -17,10 +17,12 @@ export type Conference = {
   city: string;
   startsAt: string;
   endsAt: string;
-  status: "DRAFT" | "PUBLISHED" | "SOLD_OUT" | "COMPLETED";
+  status: "DRAFT" | "PUBLISHED" | "SOLD_OUT" | "COMPLETED" | "CANCELLED";
   capacity: number;
   organizerId: number;
   theme: string;
+  timezone: string;
+  cancelledReason?: string;
 };
 export type Session = {
   id: number;
@@ -33,6 +35,19 @@ export type Session = {
   endsAt: string;
   capacity: number;
   speakerId: number;
+  status?: "ACTIVE" | "CANCELLED";
+  cancelledReason?: string;
+};
+export type Room = {
+  id: number;
+  conferenceId: number;
+  name: string;
+  capacity: number;
+};
+export type Track = {
+  id: number;
+  conferenceId: number;
+  name: string;
 };
 export type ConferenceDetail = Conference & {
   sessions: Session[];

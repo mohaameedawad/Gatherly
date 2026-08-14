@@ -61,6 +61,7 @@ export class Login {
   });
   fill(role: string) {
     this.form.controls.email.setValue(`${role}@gatherly.dev`);
+    this.form.controls.password.setValue('Workshop123!');
   }
   submit() {
     if (this.form.invalid) return;
