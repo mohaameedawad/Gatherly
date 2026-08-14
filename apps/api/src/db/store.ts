@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS sessions(id INTEGER PRIMARY KEY,conference_id INTEGER
 CREATE TABLE IF NOT EXISTS registrations(conference_id INTEGER,user_id INTEGER,status TEXT DEFAULT 'CONFIRMED',PRIMARY KEY(conference_id,user_id));
 CREATE TABLE IF NOT EXISTS agenda(user_id INTEGER,session_id INTEGER,PRIMARY KEY(user_id,session_id));
 CREATE TABLE IF NOT EXISTS rooms(id INTEGER PRIMARY KEY,conference_id INTEGER,name TEXT,capacity INTEGER);
-CREATE TABLE IF NOT EXISTS tracks(id INTEGER PRIMARY KEY,conference_id INTEGER,name TEXT);`);
+CREATE TABLE IF NOT EXISTS tracks(id INTEGER PRIMARY KEY,conference_id INTEGER,name TEXT);
+CREATE TABLE IF NOT EXISTS conference_history(id INTEGER PRIMARY KEY,conference_id INTEGER,action TEXT,reason TEXT,actor_id INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS notifications(id INTEGER PRIMARY KEY,user_id INTEGER,conference_id INTEGER,type TEXT,message TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);`);
 // Idempotent migration for columns added after the initial release; safe to
 // re-run against a pre-existing database file that predates them.
 try {
@@ -37,6 +39,11 @@ try {
 }
 try {
   db.exec("ALTER TABLE sessions ADD COLUMN cancelled_reason TEXT");
+} catch {
+  // column already exists
+}
+try {
+  db.exec("ALTER TABLE conferences ADD COLUMN cancelled_reason TEXT");
 } catch {
   // column already exists
 }
@@ -171,6 +178,7 @@ const conference = (r: any): Conference => ({
   organizerId: r.organizer_id,
   theme: r.theme,
   timezone: r.timezone ?? "",
+  cancelledReason: r.cancelled_reason ?? undefined,
 });
 const slugify = (title: string) =>
   title
@@ -276,6 +284,8 @@ export const store = {
       db.prepare("SELECT * FROM conferences WHERE id=?").get(conferenceId),
     );
     if (!c) throw Error("NOT_FOUND");
+    if (c.status === "CANCELLED" || c.status === "COMPLETED")
+      throw Error("CONFERENCE_CLOSED");
     const count = (
       db
         .prepare(
@@ -476,6 +486,70 @@ export const store = {
     return conference(
       db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
     );
+  },
+  cancelConference: (
+    id: number,
+    requester: { id: number; role: Role },
+    reason: string,
+  ) => {
+    const existing = requireOwnedConference(id, requester);
+    if (existing.status === "CANCELLED" || existing.status === "COMPLETED")
+      throw Error("CANNOT_CANCEL");
+
+    db.prepare(
+      "UPDATE conferences SET status='CANCELLED', cancelled_reason=? WHERE id=?",
+    ).run(reason, id);
+
+    db.prepare(
+      "INSERT INTO conference_history(conference_id,action,reason,actor_id) VALUES(?,?,?,?)",
+    ).run(id, "CANCELLED", reason, requester.id);
+
+    const registered = db
+      .prepare("SELECT user_id FROM registrations WHERE conference_id=?")
+      .all(id) as any[];
+    const notify = db.prepare(
+      "INSERT INTO notifications(user_id,conference_id,type,message) VALUES(?,?,?,?)",
+    );
+    const message = `${existing.title} has been cancelled. Reason: ${reason}`;
+    registered.forEach((r) =>
+      notify.run(r.user_id, id, "CONFERENCE_CANCELLED", message),
+    );
+
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
+    );
+  },
+  completeConference: (id: number, requester: { id: number; role: Role }) => {
+    const existing = requireOwnedConference(id, requester);
+    if (existing.status !== "PUBLISHED") throw Error("CANNOT_COMPLETE");
+    if (new Date() < new Date(existing.endsAt)) throw Error("NOT_ENDED");
+
+    db.prepare("UPDATE conferences SET status='COMPLETED' WHERE id=?").run(id);
+
+    db.prepare(
+      "INSERT INTO conference_history(conference_id,action,reason,actor_id) VALUES(?,?,?,?)",
+    ).run(id, "COMPLETED", null, requester.id);
+
+    return conference(
+      db.prepare("SELECT * FROM conferences WHERE id=?").get(id),
+    );
+  },
+  conferenceHistory: (id: number, requester: { id: number; role: Role }) => {
+    requireOwnedConference(id, requester);
+    return (
+      db
+        .prepare(
+          "SELECT * FROM conference_history WHERE conference_id=? ORDER BY created_at",
+        )
+        .all(id) as any[]
+    ).map((r) => ({
+      id: r.id,
+      conferenceId: r.conference_id,
+      action: r.action,
+      reason: r.reason,
+      actorId: r.actor_id,
+      createdAt: r.created_at,
+    }));
   },
   rooms: (
     conferenceId: number,

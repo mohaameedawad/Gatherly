@@ -17,11 +17,12 @@ export type Conference = {
   city: string;
   startsAt: string;
   endsAt: string;
-  status: "DRAFT" | "PUBLISHED" | "SOLD_OUT" | "COMPLETED";
+  status: "DRAFT" | "PUBLISHED" | "SOLD_OUT" | "COMPLETED" | "CANCELLED";
   capacity: number;
   organizerId: number;
   theme: string;
   timezone: string;
+  cancelledReason?: string;
 };
 export type Session = {
   id: number;

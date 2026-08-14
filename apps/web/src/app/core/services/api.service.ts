@@ -24,6 +24,12 @@ export class ApiService {
   publishConference(id: number) {
     return this.h.post<Conference>(`${this.api}/conferences/${id}/publish`, {});
   }
+  cancelConference(id: number, reason: string) {
+    return this.h.post<Conference>(`${this.api}/conferences/${id}/cancel`, { reason });
+  }
+  completeConference(id: number) {
+    return this.h.post<Conference>(`${this.api}/conferences/${id}/complete`, {});
+  }
   register(id: number) {
     return this.h.post<ConferenceDetail>(`${this.api}/conferences/${id}/register`, {});
   }

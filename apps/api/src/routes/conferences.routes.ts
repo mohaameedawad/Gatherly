@@ -76,6 +76,51 @@ conferencesRouter.post(
     }
   },
 );
+const cancelConferenceSchema = z.object({
+  reason: z
+    .string()
+    .min(10, "Cancellation reason must be at least 10 characters"),
+});
+conferencesRouter.post(
+  "/:id/cancel",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    const x = cancelConferenceSchema.safeParse(req.body);
+    if (!x.success)
+      return res
+        .status(400)
+        .json({ message: "Validation failed", issues: x.error.issues });
+    try {
+      res.json(
+        store.cancelConference(+req.params.id, req.user!, x.data.reason),
+      );
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
+conferencesRouter.post(
+  "/:id/complete",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    try {
+      res.json(store.completeConference(+req.params.id, req.user!));
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
+conferencesRouter.get(
+  "/:id/history",
+  authorize("ADMIN", "ORGANIZER"),
+  (req, res) => {
+    try {
+      res.json(store.conferenceHistory(+req.params.id, req.user!));
+    } catch (e) {
+      respondWithConferenceError(res, e);
+    }
+  },
+);
 conferencesRouter.post("/:id/register", authorize("ATTENDEE"), (req, res) => {
   try {
     store.register(+req.params.id, req.user!.id);
@@ -84,7 +129,11 @@ conferencesRouter.post("/:id/register", authorize("ATTENDEE"), (req, res) => {
     const m = (e as Error).message;
     res.status(m === "NOT_FOUND" ? 404 : 409).json({
       message:
-        m === "SOLD_OUT" ? "Conference is at capacity" : "Conference not found",
+        m === "SOLD_OUT"
+          ? "Conference is at capacity"
+          : m === "CONFERENCE_CLOSED"
+            ? "This conference is no longer accepting registrations"
+            : "Conference not found",
     });
   }
 });
@@ -193,6 +242,9 @@ const conferenceErrorStatus = (m: string) =>
     NO_ROOMS: 400,
     NO_SESSIONS: 400,
     INVALID_STATUS: 409,
+    CANNOT_CANCEL: 409,
+    CANNOT_COMPLETE: 409,
+    NOT_ENDED: 409,
   })[m] ?? 400;
 const conferenceErrorMessage = (m: string) =>
   ({
@@ -204,6 +256,9 @@ const conferenceErrorMessage = (m: string) =>
     NO_ROOMS: "Add at least one room before publishing",
     NO_SESSIONS: "Add at least one session before publishing",
     INVALID_STATUS: "Only draft conferences can be published",
+    CANNOT_CANCEL: "Only Draft or Published conferences can be cancelled",
+    CANNOT_COMPLETE: "Only Published conferences can be completed",
+    NOT_ENDED: "Conference cannot be completed before its end date",
   })[m] ?? "Request could not be completed";
 const respondWithConferenceError = (res: Response, e: unknown) => {
   const m = (e as Error).message;
