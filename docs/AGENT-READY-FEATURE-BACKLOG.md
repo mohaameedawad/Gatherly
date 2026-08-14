@@ -39,7 +39,7 @@ reviewed, not yet committed) → `Committed` (pr-manager pushed it).
 | US-2.1  | Create a conference draft                   | Completed   |
 | US-2.2  | Configure rooms and tracks                  | Completed   |
 | US-2.3  | Preview and publish a conference            | Completed   |
-| US-2.4  | Cancel or complete a conference             | Completed   |
+| US-2.4  | Cancel or complete a conference             | Committed   |
 | US-3.1  | Create and edit a session                   | Completed   |
 | US-3.2  | Cancel or delete a session                  | Completed   |
 | US-3.3  | Browse and filter the schedule              | Completed   |
