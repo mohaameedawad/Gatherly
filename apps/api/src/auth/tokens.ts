@@ -9,6 +9,7 @@ const payload = (u: User) => ({
   email: u.email,
   role: u.role,
   name: u.name,
+  v: u.tokenVersion,
 });
 export const tokens = {
   issue: (u: User) => ({

@@ -30,6 +30,20 @@ export class AuthService {
   resendVerification(email: string) {
     return this.http.post<{ message: string }>(`${API}/auth/resend-verification`, { email });
   }
+  forgotPassword(email: string) {
+    return this.http.post<{ message: string }>(`${API}/auth/forgot-password`, { email });
+  }
+  resetPassword(token: string, password: string) {
+    return this.http.post<{ message: string; reset: boolean }>(`${API}/auth/reset-password`, {
+      token,
+      password,
+    });
+  }
+  changePassword(currentPassword: string, newPassword: string) {
+    return this.http
+      .post<any>(`${API}/auth/change-password`, { currentPassword, newPassword })
+      .pipe(tap((r) => this.persist(r)));
+  }
   markEmailVerified(userId: number) {
     const u = this.user();
     if (!u || u.id !== userId) return;

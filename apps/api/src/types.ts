@@ -8,6 +8,7 @@ export type User = {
   avatar: string;
   active: boolean;
   emailVerified: boolean;
+  tokenVersion: number;
 };
 export type Conference = {
   id: number;

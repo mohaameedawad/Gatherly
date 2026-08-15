@@ -27,6 +27,11 @@ import { AuthService } from '../../core/auth/auth.service';
         <p>Explore the product through any workshop role.</p>
         <label>Email<input formControlName="email" type="email" /></label
         ><label>Password<input formControlName="password" type="password" /></label>
+        <div style="text-align: right; margin: -0.5rem 0 1rem;">
+          <a routerLink="/forgot-password" style="color: #6d5dfc; font-weight: 600;"
+            >Forgot your password?</a
+          >
+        </div>
         @if (error()) {
           <div class="alert">{{ error() }}</div>
         }
@@ -40,7 +45,10 @@ import { AuthService } from '../../core/auth/auth.service';
           ><button type="button" (click)="fill('attendee')">Attendee</button>
         </div>
         <small>All demo passwords: <code>Workshop123!</code></small>
-        <div>Don't have an account? <a routerLink="/register" style="color: #6d5dfc; font-weight: 600;">Create an account</a></div>
+        <div>
+          Don't have an account?
+          <a routerLink="/register" style="color: #6d5dfc; font-weight: 600;">Create an account</a>
+        </div>
       </form>
     </section>
   </main>`,

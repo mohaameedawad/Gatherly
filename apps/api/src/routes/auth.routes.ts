@@ -4,7 +4,10 @@ import { z } from "zod";
 import { store } from "../db/store.js";
 import { tokens } from "../auth/tokens.js";
 import { authenticate } from "../middleware/auth.js";
-import { sendVerificationEmail } from "../notifications/mailer.js";
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+} from "../notifications/mailer.js";
 export const authRouter = Router();
 const login = z.object({ email: z.email(), password: z.string().min(8) });
 const registerSchema = z.object({
@@ -14,6 +17,15 @@ const registerSchema = z.object({
 });
 const verifyEmailSchema = z.object({ token: z.string().min(1) });
 const resendVerificationSchema = z.object({ email: z.email() });
+const forgotPasswordSchema = z.object({ email: z.email() });
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8),
+});
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
 authRouter.post("/register", (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success)
@@ -62,6 +74,7 @@ authRouter.post("/refresh", (req, res) => {
     const p = tokens.verifyRefresh(req.body.refreshToken);
     const u = store.findUserById(Number(p.sub));
     if (!u?.active) throw Error();
+    if (u.tokenVersion !== p.v) throw Error();
     res.json(tokens.issue(u));
   } catch {
     res.status(401).json({
@@ -106,5 +119,63 @@ authRouter.post("/resend-verification", (req, res) => {
     sendVerificationEmail(u, token);
   }
   res.json(genericResponse);
+});
+authRouter.post("/forgot-password", (req, res) => {
+  const parsed = forgotPasswordSchema.safeParse(req.body);
+  if (!parsed.success)
+    return res.status(400).json({
+      message: "Enter a valid email address",
+      issues: parsed.error.issues,
+    });
+  const genericResponse = {
+    message:
+      "If an account exists for this email, a password reset link has been sent.",
+  };
+  const u = store.findUserByEmail(parsed.data.email);
+  if (u) {
+    const token = store.createResetToken(u.id);
+    sendPasswordResetEmail(u, token);
+  }
+  res.json(genericResponse);
+});
+authRouter.post("/reset-password", (req, res) => {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success)
+    return res.status(400).json({
+      message:
+        "A reset token and a new password of at least 8 characters are required",
+      issues: parsed.error.issues,
+    });
+  const hash = bcrypt.hashSync(parsed.data.password, 10);
+  const result = store.consumeResetToken(parsed.data.token, hash);
+  if (result.status !== "OK")
+    return res.status(400).json({
+      message: "This password reset link is invalid or has expired",
+      code: "INVALID_TOKEN",
+    });
+  res.json({
+    message: "Your password has been reset. Please sign in again.",
+    reset: true,
+  });
+});
+authRouter.post("/change-password", authenticate, (req, res) => {
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success)
+    return res.status(400).json({
+      message:
+        "Current password and a new password of at least 8 characters are required",
+      issues: parsed.error.issues,
+    });
+  const u = store.findUserById(req.user!.id);
+  if (!u || !bcrypt.compareSync(parsed.data.currentPassword, u.passwordHash))
+    return res.status(401).json({
+      message: "Current password is incorrect",
+      code: "INVALID_CREDENTIALS",
+    });
+  const hash = bcrypt.hashSync(parsed.data.newPassword, 10);
+  const updated = store.changePassword(req.user!.id, hash);
+  const issued = tokens.issue(updated);
+  const { passwordHash, ...user } = updated;
+  res.json({ message: "Password changed", ...issued, user });
 });
 authRouter.get("/me", authenticate, (req, res) => res.json(req.user));

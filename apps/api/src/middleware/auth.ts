@@ -15,6 +15,10 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
       return res
         .status(401)
         .json({ message: "Account unavailable", code: "ACCOUNT_UNAVAILABLE" });
+    if (u.tokenVersion !== p.v)
+      return res
+        .status(401)
+        .json({ message: "Session expired or invalid", code: "INVALID_TOKEN" });
     const { passwordHash, ...safe } = u;
     req.user = safe;
     next();
@@ -29,9 +33,7 @@ export const authorize =
   (req: Request, res: Response, next: NextFunction) =>
     roles.includes(req.user!.role)
       ? next()
-      : res
-          .status(403)
-          .json({
-            message: "You do not have permission for this action",
-            code: "FORBIDDEN",
-          });
+      : res.status(403).json({
+          message: "You do not have permission for this action",
+          code: "FORBIDDEN",
+        });
