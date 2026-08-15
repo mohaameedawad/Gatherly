@@ -7,6 +7,7 @@ export type User = {
   role: Role;
   avatar: string;
   active: boolean;
+  emailVerified: boolean;
 };
 export type Conference = {
   id: number;

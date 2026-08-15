@@ -32,17 +32,17 @@ reviewed, not yet committed) → `Committed` (pr-manager pushed it).
 
 | ID      | Story                                       | Status      |
 | ------- | ------------------------------------------- | ----------- |
-| US-1.1  | Create an attendee account                  | Not started |
-| US-1.2  | Verify an email address                     | Not started |
+| US-1.1  | Create an attendee account                  | Completed   |
+| US-1.2  | Verify an email address                     | Completed   |
 | US-1.3  | Reset or change a password                  | Not started |
 | US-1.4  | Manage a personal profile                   | Not started |
 | US-2.1  | Create a conference draft                   | Completed   |
 | US-2.2  | Configure rooms and tracks                  | Completed   |
 | US-2.3  | Preview and publish a conference            | Completed   |
 | US-2.4  | Cancel or complete a conference             | Not started |
-| US-3.1  | Create and edit a session                   | Completed |
-| US-3.2  | Cancel or delete a session                  | Completed |
-| US-3.3  | Browse and filter the schedule              | Completed |
+| US-3.1  | Create and edit a session                   | Completed   |
+| US-3.2  | Cancel or delete a session                  | Completed   |
+| US-3.3  | Browse and filter the schedule              | Completed   |
 | US-4.1  | Submit a session proposal                   | Not started |
 | US-4.2  | Review a proposal                           | Not started |
 | US-4.3  | Convert an accepted proposal into a session | Not started |

@@ -6,6 +6,7 @@ export interface User {
   role: Role;
   avatar: string;
   active: boolean;
+  emailVerified: boolean;
 }
 export interface Conference {
   id: number;

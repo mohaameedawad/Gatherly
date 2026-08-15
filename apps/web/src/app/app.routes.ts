@@ -4,6 +4,14 @@ import { Shell } from './layout/shell';
 export const routes: Routes = [
   { path: 'login', loadComponent: () => import('./features/auth/login').then((m) => m.Login) },
   {
+    path: 'register',
+    loadComponent: () => import('./features/auth/register').then((m) => m.Register),
+  },
+  {
+    path: 'verify-email',
+    loadComponent: () => import('./features/auth/verify-email').then((m) => m.VerifyEmail),
+  },
+  {
     path: 'forbidden',
     loadComponent: () => import('./features/forbidden/forbidden').then((m) => m.Forbidden),
   },

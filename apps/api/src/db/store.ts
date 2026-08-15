@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import type {
   Conference,
@@ -40,6 +41,16 @@ try {
 } catch {
   // column already exists
 }
+try {
+  // DEFAULT 1 backfills existing/demo accounts as verified so they are not
+  // locked out of conference registration by this later addition.
+  db.exec("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 1");
+} catch {
+  // column already exists
+}
+db.exec(
+  "CREATE TABLE IF NOT EXISTS verification_tokens(token TEXT PRIMARY KEY,user_id INTEGER NOT NULL,expires_at TEXT NOT NULL,used INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP)",
+);
 if (
   (db.prepare("SELECT count(*) count FROM users").get() as { count: number })
     .count === 0
@@ -156,6 +167,7 @@ const safe = (r: any): User => ({
   role: r.role as Role,
   avatar: r.avatar,
   active: !!r.active,
+  emailVerified: !!r.email_verified,
 });
 const conference = (r: any): Conference => ({
   id: r.id,
@@ -224,6 +236,50 @@ export const store = {
   findUserById: (id: number) => {
     const r = db.prepare("SELECT * FROM users WHERE id=?").get(id);
     return r ? safe(r) : undefined;
+  },
+  createUser: (input: {
+    name: string;
+    email: string;
+    passwordHash: string;
+  }) => {
+    const x = db
+      .prepare(
+        "INSERT INTO users(name,email,password_hash,role,avatar,active,email_verified) VALUES(?,?,?,'ATTENDEE',?,1,0)",
+      )
+      .run(
+        input.name,
+        input.email,
+        input.passwordHash,
+        input.name.slice(0, 2).toUpperCase(),
+      );
+    return safe(
+      db.prepare("SELECT * FROM users WHERE id=?").get(x.lastInsertRowid),
+    );
+  },
+  createVerificationToken: (userId: number) => {
+    const token = randomUUID();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    db.prepare(
+      "INSERT INTO verification_tokens(token,user_id,expires_at) VALUES(?,?,?)",
+    ).run(token, userId, expiresAt);
+    return token;
+  },
+  consumeVerificationToken: (
+    token: string,
+  ):
+    | { status: "OK"; userId: number }
+    | { status: "EXPIRED" | "USED" | "NOT_FOUND" } => {
+    const row = db
+      .prepare("SELECT * FROM verification_tokens WHERE token=?")
+      .get(token) as any;
+    if (!row) return { status: "NOT_FOUND" };
+    if (row.used) return { status: "USED" };
+    if (new Date(row.expires_at) < new Date()) return { status: "EXPIRED" };
+    db.prepare("UPDATE verification_tokens SET used=1 WHERE token=?").run(
+      token,
+    );
+    db.prepare("UPDATE users SET email_verified=1 WHERE id=?").run(row.user_id);
+    return { status: "OK", userId: row.user_id };
   },
   users: () =>
     (db.prepare("SELECT * FROM users ORDER BY name").all() as any[]).map(safe),

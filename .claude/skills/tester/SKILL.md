@@ -34,6 +34,13 @@ Auth: use the test-token helper (see `app.test.ts`) — `signToken({ id, role })
 vitest + Angular TestBed. Files colocated: `apps/web/src/**/<component>.spec.ts`.
 Run: `npm run test -w web -- --watch=false`
 
+## What to cover
+- Write **at most 1 new test case** per task — the single highest-value gap:
+  - If developer covered happy path → test one validation failure
+  - If developer covered validation → test one authorization boundary (401/403)
+  - If developer covered both → test one edge case
+- Do NOT rewrite tests the developer already wrote — look for gaps only
+
 Pattern:
 ```ts
 import { TestBed } from '@angular/core/testing';

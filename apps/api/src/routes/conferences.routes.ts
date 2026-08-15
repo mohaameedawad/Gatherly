@@ -77,6 +77,11 @@ conferencesRouter.post(
   },
 );
 conferencesRouter.post("/:id/register", authorize("ATTENDEE"), (req, res) => {
+  if (!req.user!.emailVerified)
+    return res.status(403).json({
+      message: "Verify your email before registering for a conference",
+      code: "EMAIL_NOT_VERIFIED",
+    });
   try {
     store.register(+req.params.id, req.user!.id);
     res.status(201).json(store.conference(+req.params.id, req.user!.id));
